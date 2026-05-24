@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学习激励转盘</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- Left: Wheel -->
+    <div class="wheel-section">
+      <div class="wheel-header">
+        <h1 class="app-title">🎡 学习激励转盘</h1>
+        <p class="app-subtitle">转起来，看看今天该做什么！</p>
+      </div>
+
+      <div class="wheel-wrapper">
+        <div class="pointer">▼</div>
+        <canvas id="wheel-canvas"></canvas>
+      </div>
+
+      <div class="wheel-controls">
+        <button id="spin-btn" class="spin-button">
+          <span class="spin-icon">🎯</span>
+          <span>开始转动！</span>
+        </button>
+        <div class="stats" id="stats-display"></div>
+      </div>
+    </div>
+
+    <!-- Right: Control Panel -->
+    <div class="control-section">
+
+      <!-- Round Progress -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2>📊 本轮进度</h2>
+          <button id="reset-tasks-btn" class="reset-btn">↺ 重置本轮</button>
+        </div>
+        <div id="round-progress"></div>
+      </div>
+
+      <!-- Rewards -->
+      <div class="panel rewards-panel">
+        <div class="panel-header">
+          <h2>🏆 我的奖励</h2>
+          <span class="panel-hint">点击可编辑</span>
+        </div>
+        <div id="rewards-list" class="items-list"></div>
+      </div>
+
+      <!-- Tasks -->
+      <div class="panel tasks-panel">
+        <div class="panel-header">
+          <h2>📋 学习任务</h2>
+          <div class="panel-header-actions">
+            <button id="bulk-import-btn" class="add-btn-secondary">批量导入</button>
+            <button id="add-task-btn" class="add-btn">＋ 添加</button>
+          </div>
+        </div>
+        <div id="tasks-list" class="items-list"></div>
+      </div>
+
+      <!-- Stats Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2>📈 今日统计</h2>
+        </div>
+        <div id="stats-panel-body"></div>
+      </div>
+
+      <!-- Rules Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2>📖 规则说明</h2>
+          <button id="rules-toggle-btn" class="toggle-btn">▶</button>
+        </div>
+        <div id="rules-body" class="hidden">
+          <ul class="rules-list">
+            <li>任务占转盘 <strong>90%</strong> 概率，奖励占 <strong>10%</strong></li>
+            <li>转到结果后必须立即选择，<strong>没有"稍后"选项</strong></li>
+            <li>点「拖延了」下次转盘<strong>简单任务概率更高</strong></li>
+            <li>中等/困难任务可<strong>拆分为小任务</strong></li>
+            <li>每周自动重置 <strong>2 张跳过卡</strong></li>
+            <li>奖励可<strong>存入奖励库</strong>留待以后使用</li>
+            <li>「重置本轮」只重置<strong>重复性任务</strong></li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Result Modal ── -->
+  <div id="result-modal" class="modal hidden">
+    <div class="modal-backdrop" id="result-backdrop"></div>
+    <div class="modal-content" id="modal-content">
+      <div class="modal-emoji"   id="modal-emoji"></div>
+      <div class="modal-type"    id="modal-type"></div>
+      <div class="modal-title"   id="modal-title"></div>
+      <div class="modal-desc"    id="modal-desc"></div>
+      <div class="modal-actions" id="modal-actions"></div>
+    </div>
+  </div>
+
+  <!-- ── Task Edit Modal ── -->
+  <div id="task-edit-modal" class="modal hidden">
+    <div class="modal-backdrop" id="task-edit-backdrop"></div>
+    <div class="modal-content task-edit-content">
+      <h3 id="task-edit-title">添加新任务</h3>
+      <div class="form-grid">
+        <div class="form-row full">
+          <label>任务名称</label>
+          <input type="text" id="te-title" class="edit-input" placeholder="输入任务名称..." maxlength="40">
+        </div>
+        <div class="form-row">
+          <label>分类</label>
+          <select id="te-category" class="edit-select">
+            <option value="study">📚 学习</option>
+            <option value="life">🏠 生活</option>
+            <option value="health">💪 健康</option>
+            <option value="project">💻 项目</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>难度</label>
+          <select id="te-difficulty" class="edit-select">
+            <option value="easy">🟢 简单</option>
+            <option value="medium">🟡 中等</option>
+            <option value="hard">🔴 困难</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>预计时间（分钟）</label>
+          <input type="number" id="te-minutes" class="edit-input" min="1" max="480" value="15">
+        </div>
+        <div class="form-row">
+          <label>权重 (1–5)</label>
+          <input type="number" id="te-weight" class="edit-input" min="1" max="5" value="2">
+        </div>
+        <div class="form-row full">
+          <label class="checkbox-label">
+            <input type="checkbox" id="te-repeatable" checked>
+            <span>重复任务（可多轮出现）</span>
+          </label>
+        </div>
+        <div class="form-row" id="te-freq-row">
+          <label>重复频率</label>
+          <select id="te-frequency" class="edit-select">
+            <option value="daily">每天</option>
+            <option value="weekly">每周</option>
+            <option value="custom" selected>自定义</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="task-edit-cancel"  class="btn-secondary">取消</button>
+        <button id="task-edit-confirm" class="btn-primary">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Reward Edit Modal ── -->
+  <div id="reward-edit-modal" class="modal hidden">
+    <div class="modal-backdrop" id="reward-edit-backdrop"></div>
+    <div class="modal-content task-edit-content">
+      <h3>编辑奖励</h3>
+      <div class="form-grid">
+        <div class="form-row full">
+          <label>奖励名称</label>
+          <input type="text" id="re-title" class="edit-input" placeholder="输入奖励名称..." maxlength="30">
+        </div>
+        <div class="form-row">
+          <label>时长（分钟）</label>
+          <input type="number" id="re-duration" class="edit-input" min="1" max="480" value="30">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="reward-edit-cancel"  class="btn-secondary">取消</button>
+        <button id="reward-edit-confirm" class="btn-primary">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Split Modal ── -->
+  <div id="split-modal" class="modal hidden">
+    <div class="modal-backdrop" id="split-backdrop"></div>
+    <div class="modal-content task-edit-content">
+      <div class="modal-emoji">✂️</div>
+      <h3>拆分任务</h3>
+      <p class="split-desc">将「<span id="split-task-name"></span>」拆分为更小的子任务？</p>
+
+      <!-- State: choice -->
+      <div id="split-state-choice">
+        <div class="split-choice-btns">
+          <button id="split-ai-btn" class="btn-ai-split">✨ AI 智能拆分</button>
+          <button id="split-manual-btn" class="btn-secondary">✏️ 手动拆分</button>
+        </div>
+        <div class="modal-actions">
+          <button id="split-no-btn" class="btn-text-muted">不拆分，继续</button>
+        </div>
+      </div>
+
+      <!-- State: loading -->
+      <div id="split-state-loading" style="display:none">
+        <div class="split-loading">
+          <div class="loading-spinner"></div>
+          <span>AI 正在分析任务…</span>
+        </div>
+      </div>
+
+      <!-- State: results -->
+      <div id="split-state-results" style="display:none">
+        <p class="split-ai-hint">AI 建议的子任务（可修改）：</p>
+        <div id="split-ai-results" class="split-ai-results"></div>
+        <div class="modal-actions">
+          <button id="split-reject-btn" class="btn-secondary">重新选择</button>
+          <button id="split-accept-btn" class="btn-primary">确认拆分 ✓</button>
+        </div>
+      </div>
+
+      <!-- State: error -->
+      <div id="split-state-error" style="display:none">
+        <p id="split-error-msg" class="split-error-msg"></p>
+        <div class="modal-actions">
+          <button id="split-err-manual-btn" class="btn-secondary">手动拆分</button>
+          <button id="split-retry-btn" class="btn-primary">重试</button>
+        </div>
+      </div>
+
+      <!-- State: manual -->
+      <div id="split-state-manual" style="display:none">
+        <div id="split-inputs" class="split-inputs"></div>
+        <div class="split-controls">
+          <button id="split-remove-btn" class="btn-secondary" style="display:none">－ 减少</button>
+          <button id="split-add-btn" class="btn-secondary">＋ 添加</button>
+        </div>
+        <div class="modal-actions">
+          <button id="split-cancel-btn"  class="btn-secondary">取消</button>
+          <button id="split-confirm-btn" class="btn-primary">确认拆分</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Bulk Import Modal ── -->
+  <div id="bulk-import-modal" class="modal hidden">
+    <div class="modal-backdrop" id="bulk-backdrop"></div>
+    <div class="modal-content task-edit-content bulk-modal-content">
+      <h3>批量导入任务</h3>
+      <p class="bulk-hint">每行一个任务，格式：<code>名称 | 分类 | 难度 | 分钟数</code><br>
+        分类: study / life / health / project &nbsp;|&nbsp; 难度: easy / medium / hard</p>
+      <textarea id="bulk-textarea" class="bulk-textarea"
+        placeholder="背单词10个 | study | easy | 15&#10;做题30分钟 | study | medium | 30&#10;整理书桌 | life | easy | 10"></textarea>
+      <pre id="bulk-error" class="bulk-error"></pre>
+      <div class="modal-actions">
+        <button id="bulk-cancel-btn"  class="btn-secondary">取消</button>
+        <button id="bulk-confirm-btn" class="btn-primary">导入</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
