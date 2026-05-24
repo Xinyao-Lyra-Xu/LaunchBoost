@@ -1,0 +1,44 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# runtime files
+*.local
+*.env
+.env.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Electron packaging artifacts
+*.app
+*.dmg
+*.exe
+*.zip
+*.7z
+*.tar.gz
+
+# lock files
+package-lock.json
+# If you use pnpm or yarn, you can ignore their lock files if needed
+# pnpm-lock.yaml
+yarn.lock
