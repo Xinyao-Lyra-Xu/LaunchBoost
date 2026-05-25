@@ -4,6 +4,8 @@
   "description": "学习激励转盘",
   "main": "main.js",
   "scripts": {
+    "build": "vite build",
+    "dev": "npm run build && electron .",
     "start": "electron .",
     "typecheck": "tsc --noEmit"
   },

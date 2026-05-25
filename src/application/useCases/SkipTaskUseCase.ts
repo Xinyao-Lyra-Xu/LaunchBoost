@@ -42,11 +42,9 @@ export class SkipTaskUseCase {
 
     const updatedStats = bumpStats(stats, "skippedToday", "totalSkipped");
 
-    await Promise.all([
-      this.taskRepo.update(task),
-      this.roundStateRepo.save(roundState),
-      this.statsRepo.save(updatedStats),
-    ]);
+    await this.taskRepo.update(task);
+    await this.statsRepo.save(updatedStats);
+    await this.roundStateRepo.save(roundState);
 
     return { task, roundState, stats: updatedStats };
   }

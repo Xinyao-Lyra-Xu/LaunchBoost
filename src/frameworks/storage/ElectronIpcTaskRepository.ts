@@ -55,7 +55,14 @@ export class ElectronIpcTaskRepository implements TaskRepository {
 
   async saveAll(tasks: Task[]): Promise<void> {
     const data = await dataStore.get();
-    data.tasks = tasks.map(toPersistedTask);
+    const prevMap = new Map(data.tasks.map((p) => [String(p.id), p]));
+    data.tasks = tasks.map((t) => {
+      const prev = prevMap.get(t.id);
+      const p = toPersistedTask(t);
+      return prev
+        ? { ...p, completed: prev.completed, activeInCurrentRound: t.active }
+        : p;
+    });
     await dataStore.save(data);
   }
 
@@ -63,7 +70,13 @@ export class ElectronIpcTaskRepository implements TaskRepository {
     const data = await dataStore.get();
     const idx = data.tasks.findIndex((p) => String(p.id) === task.id);
     if (idx !== -1) {
-      data.tasks[idx] = toPersistedTask(task);
+      // Preserve completed/activeInCurrentRound — those are owned by RoundStateRepository
+      const prev = data.tasks[idx];
+      data.tasks[idx] = {
+        ...toPersistedTask(task),
+        completed: prev.completed,
+        activeInCurrentRound: prev.activeInCurrentRound,
+      };
     } else {
       data.tasks.push(toPersistedTask(task));
     }

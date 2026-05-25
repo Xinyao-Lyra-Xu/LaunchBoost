@@ -39,11 +39,9 @@ export class ProcrastinateTaskUseCase {
       "totalProcrastinated"
     );
 
-    await Promise.all([
-      this.taskRepo.update(task),
-      this.roundStateRepo.save(roundState),
-      this.statsRepo.save(updatedStats),
-    ]);
+    await this.taskRepo.update(task);
+    await this.statsRepo.save(updatedStats);
+    await this.roundStateRepo.save(roundState);
 
     const shouldOfferSplit =
       task.difficulty === "medium" || task.difficulty === "hard";

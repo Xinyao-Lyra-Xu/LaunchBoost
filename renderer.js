@@ -32,6 +32,16 @@ let afterProcrastination  = false;
 let splitTaskTarget       = null;
 let aiGeneratedSubtasks   = null;
 
+// ── Timer State ────────────────────────────────────────────────────────────
+let timerInterval = null;
+let timerSeconds  = 0;
+let timerMode     = 'idle'; // 'idle' | 'up' | 'down'
+let timerEstMins  = 15;
+
+// ── Chain & Stats State ────────────────────────────────────────────────────
+let currentChain = null;   // TaskChain currently being worked through
+let statsTab     = 'today'; // 'today' | 'week' | 'month'
+
 // ── Migration ──────────────────────────────────────────────────────────────
 function migrateTask(t) {
   const wasCompleted = t.completed || false;
@@ -49,7 +59,12 @@ function migrateTask(t) {
     procrastinatedCount: t.procrastinatedCount || 0,
     skippedCount:        t.skippedCount        || 0,
     activeInCurrentRound: t.activeInCurrentRound !== undefined
-      ? t.activeInCurrentRound : !wasCompleted
+      ? t.activeInCurrentRound : !wasCompleted,
+    parentTaskId:    t.parentTaskId    || null,
+    parentTaskTitle: t.parentTaskTitle || null,
+    isSubtask:       t.isSubtask       || false,
+    subtaskOrder:    t.subtaskOrder    || 0,
+    chainId:         t.chainId         || null
   };
 }
 
@@ -115,6 +130,31 @@ async function init() {
 
   data.meta.stats = migrateStats(data.meta.stats);
 
+  if (!Array.isArray(data.meta.chains))      data.meta.chains      = [];
+  if (!Array.isArray(data.meta.activityLog)) data.meta.activityLog = [];
+  if (data.meta.lockedByTaskId     === undefined) data.meta.lockedByTaskId     = null;
+  if (data.meta.pendingTaskResultId === undefined) data.meta.pendingTaskResultId = null;
+  // Defensive: if the pending task is already done, clear stale lock
+  if (data.meta.pendingTaskResultId) {
+    const pTask = data.tasks.find(t => String(t.id) === String(data.meta.pendingTaskResultId));
+    if (!pTask || pTask.completed) data.meta.pendingTaskResultId = null;
+  }
+  currentChain = data.meta.chains.find(c => c.status === 'active') || null;
+
+  // Restore lock: if there was a procrastination with no chain created (e.g. refresh mid-split)
+  if (data.meta.lockedByTaskId && !currentChain) {
+    const lockedTask = data.tasks.find(t => String(t.id) === String(data.meta.lockedByTaskId));
+    setTimeout(() => {
+      if (lockedTask) {
+        openSplitModal(lockedTask);
+      } else {
+        data.meta.lockedByTaskId = null;
+        saveData();
+        updateSpinLock();
+      }
+    }, 100);
+  }
+
   nextId = Math.max(
     0,
     ...data.tasks.map(t   => t.id || 0),
@@ -131,6 +171,8 @@ function renderAll() {
   renderRoundProgress();
   renderStats();
   updateStats();
+  updateChainBanner();
+  updateSpinLock();
 }
 
 // ── Wheel Drawing ──────────────────────────────────────────────────────────
@@ -286,6 +328,90 @@ function darken(hex, amount) {
   return `rgb(${r},${g},${b})`;
 }
 
+function lighten(hex, amount) {
+  const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + amount);
+  const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + amount);
+  const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + amount);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ── Flash highlight ────────────────────────────────────────────────────────
+function flashWinnerSegment(winnerSeg, segs, callback) {
+  let tick = 0;
+  const TOTAL = 6; // 3 on + 3 off
+
+  function next() {
+    tick++;
+    drawWheelHighlighted(winnerSeg, segs, tick % 2 === 1);
+    if (tick < TOTAL) {
+      setTimeout(next, 220);
+    } else {
+      drawWheel();
+      callback();
+    }
+  }
+  setTimeout(next, 80);
+}
+
+function drawWheelHighlighted(winnerSeg, segs, highlight) {
+  ctx.clearRect(0, 0, DISPLAY, DISPLAY);
+  const totalWeight = segs.reduce((s, seg) => s + seg.weight, 0);
+  let angle = -Math.PI / 2;
+
+  segs.forEach((seg, i) => {
+    const arc = (seg.weight / totalWeight) * Math.PI * 2;
+    const end = angle + arc;
+    const mid = angle + arc / 2;
+    const isWinner = seg === winnerSeg;
+
+    ctx.beginPath();
+    ctx.moveTo(CENTER, CENTER);
+    ctx.arc(CENTER, CENTER, RADIUS, angle, end);
+    ctx.closePath();
+
+    ctx.fillStyle = (isWinner && highlight)
+      ? lighten(seg.color, 70)
+      : (i % 2 === 0 ? seg.color : darken(seg.color, 18));
+    ctx.fill();
+
+    if (isWinner && highlight) {
+      ctx.strokeStyle = 'rgba(255, 255, 100, 0.95)';
+      ctx.lineWidth = 5;
+      ctx.shadowColor = 'rgba(255, 230, 0, 0.9)';
+      ctx.shadowBlur = 18;
+    } else {
+      ctx.strokeStyle = 'rgba(10, 10, 30, 0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 0;
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    drawText(seg.item.title || seg.item.name || '', mid, seg.type === 'reward', arc);
+    angle = end;
+  });
+
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.arc(CENTER, CENTER, RADIUS, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(CENTER, CENTER, 20, 0, Math.PI * 2);
+  ctx.fillStyle = '#12122a';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(CENTER, CENTER, 5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fill();
+}
+
 // ── Spin ───────────────────────────────────────────────────────────────────
 document.getElementById('spin-btn').addEventListener('click', spin);
 
@@ -301,6 +427,7 @@ function pickWinner(segs) {
 
 function spin() {
   if (isSpinning) return;
+  if ((currentChain && currentChain.status === 'active') || data.meta.lockedByTaskId) return;
   const segs = getActiveSegments();
   if (segs.length === 0) return;
 
@@ -337,8 +464,11 @@ function spin() {
 
     afterProcrastination = false;
     isSpinning = false;
-    document.getElementById('spin-btn').disabled = false;
-    showResult(winner);
+    flashWinnerSegment(winner, segs, () => {
+      // Rewards resolve immediately; task results stay locked until the user acts
+      if (winner.type === 'reward') document.getElementById('spin-btn').disabled = false;
+      showResult(winner);
+    });
   }, 4150);
 }
 
@@ -363,6 +493,13 @@ function showResult(winner) {
     document.getElementById('bank-reward-btn').addEventListener('click', bankCurrentReward);
   } else {
     content.classList.add('task-result');
+    const parentCtx = document.getElementById('modal-parent-ctx');
+    if (winner.item.isSubtask && winner.item.parentTaskTitle) {
+      parentCtx.textContent = '父任务：' + winner.item.parentTaskTitle;
+      parentCtx.classList.remove('hidden');
+    } else {
+      parentCtx.classList.add('hidden');
+    }
     const skipCount  = data.meta && data.meta.skipCards ? data.meta.skipCards.count : 0;
     const catLabel   = CATEGORY_LABELS[winner.item.category]  || winner.item.category  || '';
     const diffLabel  = DIFFICULTY_LABELS[winner.item.difficulty] || winner.item.difficulty || '';
@@ -373,17 +510,29 @@ function showResult(winner) {
     document.getElementById('modal-desc').textContent  = '加油！完成这个任务，你会离目标更近一步！';
     document.getElementById('modal-actions').innerHTML = `
       <button class="btn-complete"     id="complete-task-btn">完成 ✓</button>
-      <button class="btn-procrastinate" id="procrastinate-btn">拖延了 😅</button>
+      <button class="btn-procrastinate" id="procrastinate-btn">太难了，帮我拆小 ✂️</button>
       <button class="btn-skip" id="skip-card-btn" ${skipCount === 0 ? 'disabled' : ''}>使用跳过卡 🃏 (${skipCount})</button>
     `;
     document.getElementById('complete-task-btn').addEventListener('click', completeCurrentTask);
     document.getElementById('procrastinate-btn').addEventListener('click', procrastinateCurrentTask);
     document.getElementById('skip-card-btn').addEventListener('click', skipCurrentTask);
   }
+  const timerEl = document.getElementById('modal-timer');
+  if (winner.type === 'task') {
+    timerEl.classList.remove('hidden');
+    initTimer(winner.item.estimatedMinutes || 15);
+    // Persist lock so page refresh still remembers the unresolved task
+    data.meta.pendingTaskResultId = String(winner.item.id);
+    saveData();
+    updateSpinLock();
+  } else {
+    timerEl.classList.add('hidden');
+  }
   document.getElementById('result-modal').classList.remove('hidden');
 }
 
 function closeResult() {
+  stopTimer(true);
   document.getElementById('result-modal').classList.add('hidden');
   currentResult = null;
 }
@@ -396,10 +545,18 @@ function completeCurrentTask() {
     task.completed            = true;
     task.completedCount       = (task.completedCount || 0) + 1;
     task.activeInCurrentRound = false;
-    saveData();
-    renderAll();
   }
+  data.meta.pendingTaskResultId = null; // task resolved — unlock spin
+  saveData();
+  renderAll(); // updateSpinLock() inside will re-enable spin button
   bumpStat('completedToday', 'totalCompleted');
+  logActivity('task_done', {
+    taskId: String(currentResult.item.id), taskTitle: currentResult.item.title,
+    parentTaskId: currentResult.item.parentTaskId || null,
+    parentTaskTitle: currentResult.item.parentTaskTitle || null,
+    category: currentResult.item.category,
+    estimatedMinutes: currentResult.item.estimatedMinutes || 15
+  });
   closeResult();
   showToast('任务完成！继续加油 🎉');
 }
@@ -409,34 +566,37 @@ function procrastinateCurrentTask() {
   const task = data.tasks.find(t => t.id === currentResult.item.id);
   if (task) {
     task.procrastinatedCount = (task.procrastinatedCount || 0) + 1;
-    saveData();
   }
   bumpStat('procrastinatedToday', 'totalProcrastinated');
-  afterProcrastination = true;
-
-  const diff = task ? task.difficulty : 'easy';
-  if (diff === 'medium' || diff === 'hard') {
-    closeResult();
-    openSplitModal(task);
-  } else {
-    renderAll();
-    closeResult();
-    showToast('已记录拖延，下次简单任务概率更高 💪');
-  }
+  logActivity('task_procrastinated', {
+    taskId: String(currentResult.item.id), taskTitle: currentResult.item.title,
+    category: currentResult.item.category
+  });
+  // Lock spin — user must complete a task chain before spinning again
+  data.meta.pendingTaskResultId = null; // transitions to lockedByTaskId
+  data.meta.lockedByTaskId      = String(currentResult.item.id);
+  saveData();
+  closeResult();
+  openSplitModal(task || currentResult.item);
 }
 
 function skipCurrentTask() {
   if (!currentResult || currentResult.type !== 'task') return;
   if (!data.meta.skipCards || data.meta.skipCards.count <= 0) return;
   data.meta.skipCards.count--;
+  data.meta.pendingTaskResultId = null; // skip card resolves the result — unlock spin
   const task = data.tasks.find(t => t.id === currentResult.item.id);
   if (task) {
-    task.skippedCount        = (task.skippedCount || 0) + 1;
-    task.activeInCurrentRound = false;
+    task.skippedCount = (task.skippedCount || 0) + 1;
+    // Task remains activeInCurrentRound — skip card does not permanently remove it
   }
   bumpStat('skippedToday', 'totalSkipped');
+  logActivity('task_skipped', {
+    taskId: String(currentResult.item.id), taskTitle: currentResult.item.title,
+    category: currentResult.item.category
+  });
   saveData();
-  renderAll();
+  renderAll(); // updateSpinLock() inside will re-enable spin button
   const remaining = data.meta.skipCards.count;
   closeResult();
   showToast(`任务已跳过！还剩 ${remaining} 张跳过卡 🃏`);
@@ -444,7 +604,9 @@ function skipCurrentTask() {
 
 // ── Reward result actions ──────────────────────────────────────────────────
 function useRewardNow() {
+  const item = currentResult ? currentResult.item : null;
   closeResult();
+  if (item) logActivity('reward_used', { rewardId: String(item.id), rewardTitle: item.title });
   showToast('享受你的奖励吧！🎉');
 }
 
@@ -457,6 +619,7 @@ function bankCurrentReward() {
     renderAll();
   }
   bumpStat('rewardsBankedToday', 'totalRewardsBanked');
+  logActivity('reward_banked', { rewardId: String(reward.id), rewardTitle: reward.title });
   closeResult();
   showToast('奖励已存入奖励库！🏦');
 }
@@ -471,13 +634,144 @@ function useBankedReward(id) {
   }
 }
 
+// ── ID + Activity Log ──────────────────────────────────────────────────────
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function logActivity(action, details) {
+  if (!data.meta.activityLog) data.meta.activityLog = [];
+  data.meta.activityLog.push({ id: generateId(), timestamp: new Date().toISOString(), action, ...details });
+}
+
+// ── Timer ──────────────────────────────────────────────────────────────────
+function initTimer(estimatedMinutes) {
+  stopTimer(true);
+  timerEstMins = estimatedMinutes || 15;
+  timerSeconds = 0;
+  timerMode    = 'idle';
+  document.getElementById('timer-est-input').value = timerEstMins;
+  document.getElementById('timer-display').textContent = '00:00';
+  document.getElementById('timer-result').className = 'timer-result hidden';
+  document.getElementById('timer-result').textContent = '';
+  document.getElementById('timer-up-btn').classList.remove('hidden');
+  document.getElementById('timer-down-btn').classList.remove('hidden');
+  document.getElementById('timer-stop-btn').classList.add('hidden');
+}
+
+function startTimerUp() {
+  stopTimer(true);
+  timerMode    = 'up';
+  timerSeconds = 0;
+  document.getElementById('timer-up-btn').classList.add('hidden');
+  document.getElementById('timer-down-btn').classList.add('hidden');
+  document.getElementById('timer-stop-btn').classList.remove('hidden');
+  document.getElementById('timer-result').className = 'timer-result hidden';
+  timerInterval = setInterval(() => {
+    timerSeconds++;
+    updateTimerDisplay();
+  }, 1000);
+}
+
+function startTimerDown() {
+  stopTimer(true);
+  timerEstMins  = parseInt(document.getElementById('timer-est-input').value) || 15;
+  timerMode     = 'down';
+  timerSeconds  = timerEstMins * 60;
+  document.getElementById('timer-up-btn').classList.add('hidden');
+  document.getElementById('timer-down-btn').classList.add('hidden');
+  document.getElementById('timer-stop-btn').classList.remove('hidden');
+  document.getElementById('timer-result').className = 'timer-result hidden';
+  timerInterval = setInterval(() => {
+    timerSeconds = Math.max(0, timerSeconds - 1);
+    updateTimerDisplay();
+    if (timerSeconds <= 0) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+      timerMode = 'idle';
+      document.getElementById('timer-up-btn').classList.remove('hidden');
+      document.getElementById('timer-down-btn').classList.remove('hidden');
+      document.getElementById('timer-stop-btn').classList.add('hidden');
+      showTimerCompare(timerEstMins * 60);
+    }
+  }, 1000);
+}
+
+function stopTimer(silent) {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  if (!silent && timerMode !== 'idle') {
+    const prevMode = timerMode;
+    const elapsed  = prevMode === 'up' ? timerSeconds : (timerEstMins * 60 - timerSeconds);
+    timerMode = 'idle';
+    document.getElementById('timer-up-btn').classList.remove('hidden');
+    document.getElementById('timer-down-btn').classList.remove('hidden');
+    document.getElementById('timer-stop-btn').classList.add('hidden');
+    showTimerCompare(elapsed);
+  } else {
+    timerMode = 'idle';
+  }
+}
+
+function updateTimerDisplay() {
+  const secs = Math.abs(timerSeconds);
+  const m = Math.floor(secs / 60).toString().padStart(2, '0');
+  const s = (secs % 60).toString().padStart(2, '0');
+  document.getElementById('timer-display').textContent = `${m}:${s}`;
+}
+
+function showTimerCompare(elapsedSeconds) {
+  const estSecs    = timerEstMins * 60;
+  const diff       = elapsedSeconds - estSecs;
+  const absDiffMin = Math.round(Math.abs(diff) / 60);
+  const actualMin  = Math.round(elapsedSeconds / 60);
+  const el         = document.getElementById('timer-result');
+
+  let msg, cls;
+  if (Math.abs(diff) <= 300) {
+    msg = `✅ 完美！用时 ${actualMin} 分钟，与预估相差不超过 5 分钟`;
+    cls = 'timer-result timer-ok';
+  } else if (diff > 0) {
+    msg = `⏰ 超时了 ${absDiffMin} 分钟（用时 ${actualMin} 分，预估 ${timerEstMins} 分）`;
+    cls = 'timer-result timer-over';
+  } else {
+    msg = `⚡ 提前完成！节省了 ${absDiffMin} 分钟（用时 ${actualMin} 分，预估 ${timerEstMins} 分）`;
+    cls = 'timer-result timer-under';
+  }
+  el.textContent = msg;
+  el.className = cls;
+}
+
+document.getElementById('timer-up-btn').addEventListener('click', startTimerUp);
+document.getElementById('timer-down-btn').addEventListener('click', startTimerDown);
+document.getElementById('timer-stop-btn').addEventListener('click', () => stopTimer(false));
+document.getElementById('timer-est-input').addEventListener('change', () => {
+  timerEstMins = parseInt(document.getElementById('timer-est-input').value) || 15;
+});
+
 // ── Split Modal ────────────────────────────────────────────────────────────
 // States: 'choice' | 'loading' | 'results' | 'error' | 'manual'
 
 function openSplitModal(task) {
   splitTaskTarget     = task;
   aiGeneratedSubtasks = null;
-  document.getElementById('split-task-name').textContent = task ? task.title : '';
+  const isLocked = !!data.meta.lockedByTaskId;
+  // Update description text
+  const descEl = document.getElementById('split-desc-p');
+  if (descEl) {
+    if (isLocked) {
+      descEl.textContent = '这个任务不能直接跳过。你需要把它拆成更小的步骤，完成后才能继续抽取。';
+    } else {
+      descEl.innerHTML = '任务 "<span id="split-task-name">' + esc(task ? task.title : '') + '</span>" 有点难，要拆分成更小的步骤吗？';
+    }
+  }
+  const nameEl = document.getElementById('split-task-name');
+  if (nameEl) nameEl.textContent = task ? task.title : '';
+  // Hide "不拆分" when forced — user cannot escape without creating a chain
+  const noBtn = document.getElementById('split-no-btn');
+  if (noBtn) noBtn.style.display = isLocked ? 'none' : '';
   setSplitState('choice');
   document.getElementById('split-modal').classList.remove('hidden');
 }
@@ -489,6 +783,11 @@ function setSplitState(state) {
   document.getElementById('split-state-error').style.display   = state === 'error'   ? '' : 'none';
   document.getElementById('split-state-manual').style.display  = state === 'manual'  ? '' : 'none';
 }
+
+const TASK_TYPE_LABELS = {
+  review: '复习', vocab: '背单词', problem: '做题', code: '写代码',
+  assignment: '写作业', organize: '整理', email: '发邮件', generic: '一般任务'
+};
 
 async function requestAiSplit() {
   if (!splitTaskTarget) return;
@@ -505,7 +804,7 @@ async function requestAiSplit() {
       setSplitState('error');
     } else {
       aiGeneratedSubtasks = result.subtasks;
-      renderAiResults(result.subtasks);
+      renderSplitResults(result, result.source || 'local');
       setSplitState('results');
     }
   } catch (e) {
@@ -514,31 +813,226 @@ async function requestAiSplit() {
   }
 }
 
-function renderAiResults(subtasks) {
+function renderSplitResults(splitResult, source) {
+  // Source badge
+  const labelEl = document.getElementById('split-source-label');
+  if (labelEl) {
+    if (source === 'ai') {
+      labelEl.textContent = '🤖 AI 智能拆分';
+      labelEl.className = 'split-source-label split-source-ai';
+    } else {
+      labelEl.textContent = '📋 本地规则拆分';
+      labelEl.className = 'split-source-label split-source-local';
+    }
+  }
+
+  // Detection info
+  const detEl = document.getElementById('split-detection');
+  if (detEl) {
+    const typeLabel = TASK_TYPE_LABELS[splitResult.taskType] || splitResult.taskType || '';
+    const targetStr = splitResult.target || '';
+    detEl.innerHTML = typeLabel
+      ? '<span class="split-detect-type">' + esc(typeLabel) + '</span>'
+        + (targetStr ? '<span class="split-detect-sep"> · </span>'
+          + '<span class="split-detect-target">' + esc(targetStr) + '</span>'
+          : '')
+      : '';
+  }
+
+  // Hide "Add to Spinner" when forced — must start chain
+  const spinnerBtn = document.getElementById('split-spinner-btn');
+  if (spinnerBtn) spinnerBtn.style.display = data.meta.lockedByTaskId ? 'none' : '';
+
+  // Starter task
+  const starterEl = document.getElementById('split-starter-task');
+  if (starterEl) {
+    const st = splitResult.starterTask;
+    if (st) {
+      starterEl.innerHTML =
+        '<div class="ai-subtask-item split-starter-item">' +
+          '<input type="text" class="edit-input split-starter-title"' +
+          ' value="' + esc(st.title) + '" maxlength="80">' +
+          '<input type="number" class="edit-input split-starter-min"' +
+          ' value="' + (st.estimatedMinutes || 3) + '" min="1" max="30">' +
+          '<span class="ai-subtask-unit">分</span>' +
+        '</div>';
+    } else {
+      starterEl.innerHTML = '';
+    }
+  }
+
+  // Subtasks
   const container = document.getElementById('split-ai-results');
-  container.innerHTML = subtasks.map((st, i) => `
-    <div class="ai-subtask-item">
-      <span class="ai-subtask-num">${i + 1}.</span>
-      <input type="text" class="edit-input ai-subtask-title"
-             value="${esc(st.title)}" maxlength="40" data-idx="${i}">
-      <input type="number" class="edit-input ai-subtask-min"
-             value="${st.estimatedMinutes || 15}" min="1" max="120" data-idx="${i}">
-      <span class="ai-subtask-unit">分</span>
-    </div>
-  `).join('');
+  if (container && splitResult.subtasks) {
+    container.innerHTML = splitResult.subtasks.map((st, i) =>
+      '<div class="ai-subtask-item">' +
+        '<span class="ai-subtask-num">' + (i + 1) + '.</span>' +
+        '<input type="text" class="edit-input ai-subtask-title"' +
+        ' value="' + esc(st.title) + '" maxlength="60" data-idx="' + i + '">' +
+        '<input type="number" class="edit-input ai-subtask-min"' +
+        ' value="' + (st.estimatedMinutes || 10) + '" min="1" max="60" data-idx="' + i + '">' +
+        '<span class="ai-subtask-unit">分</span>' +
+      '</div>'
+    ).join('');
+  }
 }
 
-function acceptAiSplit() {
-  if (!splitTaskTarget) return;
-  const titleEls = document.querySelectorAll('.ai-subtask-title');
-  const minEls   = document.querySelectorAll('.ai-subtask-min');
-  const subtasks = [];
-  titleEls.forEach((el, i) => {
+function collectSplitTasks() {
+  const all = [];
+  const stEl  = document.querySelector('.split-starter-title');
+  const stMin = document.querySelector('.split-starter-min');
+  if (stEl && stEl.value.trim())
+    all.push({ title: stEl.value.trim(), estimatedMinutes: Math.max(1, parseInt(stMin ? stMin.value : '3') || 3) });
+  document.querySelectorAll('.ai-subtask-title').forEach((el, i) => {
+    const minEl = document.querySelectorAll('.ai-subtask-min')[i];
     const title = el.value.trim();
-    if (title) subtasks.push({ title, estimatedMinutes: Math.max(1, parseInt(minEls[i].value) || 15) });
+    if (title) all.push({ title, estimatedMinutes: Math.max(1, parseInt(minEl ? minEl.value : '10') || 10) });
   });
-  if (subtasks.length === 0) { cancelSplit(); return; }
-  applySplit(subtasks);
+  return all;
+}
+
+function startChainFromSplit() {
+  if (!splitTaskTarget) return;
+  const tasks = collectSplitTasks();
+  if (tasks.length === 0) { cancelSplit(); return; }
+
+  const parent  = splitTaskTarget;
+  const chainId = generateId();
+  const chain   = {
+    id: chainId, parentTaskId: String(parent.id), parentTaskTitle: parent.title,
+    status: 'active', createdAt: new Date().toISOString(),
+    steps: tasks.map((t, i) => ({ id: generateId(), title: t.title,
+      estimatedMinutes: t.estimatedMinutes, status: 'pending', order: i }))
+  };
+  if (!data.meta.chains) data.meta.chains = [];
+  data.meta.chains.push(chain);
+  currentChain = chain;
+  parent.activeInCurrentRound = false;
+  data.meta.lockedByTaskId = null; // chain itself is now the lock
+  logActivity('chain_started', { taskId: chainId, taskTitle: parent.title,
+    parentTaskId: String(parent.id), parentTaskTitle: parent.title, category: parent.category });
+  saveData(); renderAll();
+
+  document.getElementById('split-modal').classList.add('hidden');
+  splitTaskTarget = null; aiGeneratedSubtasks = null;
+  showChainMode();
+}
+
+function addToSpinnerFromSplit() {
+  const tasks = collectSplitTasks();
+  if (tasks.length === 0) { cancelSplit(); return; }
+  applySplit(tasks);
+}
+
+// ── Task Chain ────────────────────────────────────────────────────────────
+function showChainMode() {
+  if (!currentChain) return;
+  const step = currentChain.steps.find(s => s.status === 'pending');
+  if (!step) { finishChain(); return; }
+  const done  = currentChain.steps.filter(s => s.status !== 'pending').length;
+  const total = currentChain.steps.length;
+  document.getElementById('chain-parent-title').textContent = currentChain.parentTaskTitle;
+  document.getElementById('chain-progress').textContent     = `步骤 ${done + 1} / ${total}`;
+  document.getElementById('chain-step-title').textContent   = step.title;
+  document.getElementById('chain-step-mins').textContent    = `预计 ${step.estimatedMinutes} 分钟`;
+  document.getElementById('chain-progress-bar').style.width = Math.round((done / total) * 100) + '%';
+  document.getElementById('chain-skip-btn').classList.add('hidden'); // no skipping chain steps
+  document.getElementById('chain-mode-modal').classList.remove('hidden');
+}
+
+function advanceChainStep(status) {
+  if (!currentChain) return;
+  const step = currentChain.steps.find(s => s.status === 'pending');
+  if (!step) return;
+  step.status = status;
+  saveData();
+  const next = currentChain.steps.find(s => s.status === 'pending');
+  if (!next) { document.getElementById('chain-mode-modal').classList.add('hidden'); finishChain(); }
+  else showChainMode();
+}
+
+function finishChain() {
+  if (!currentChain) return;
+  currentChain.status = 'completed';
+  currentChain.completedAt = new Date().toISOString();
+  // Mark the original parent task as completed
+  const parentTask = data.tasks.find(t => String(t.id) === String(currentChain.parentTaskId));
+  if (parentTask) {
+    parentTask.completed            = true;
+    parentTask.completedCount       = (parentTask.completedCount || 0) + 1;
+    parentTask.activeInCurrentRound = false;
+  }
+  data.meta.lockedByTaskId = null; // chain done — spin is now allowed
+  logActivity('chain_completed', { taskId: currentChain.id, taskTitle: currentChain.parentTaskTitle,
+    parentTaskId: currentChain.parentTaskId, parentTaskTitle: currentChain.parentTaskTitle });
+  logActivity('task_done', {
+    taskId: currentChain.parentTaskId, taskTitle: currentChain.parentTaskTitle,
+    parentTaskId: null, parentTaskTitle: null,
+    category: parentTask ? parentTask.category : 'study',
+    estimatedMinutes: parentTask ? parentTask.estimatedMinutes : 0
+  });
+  bumpStat('completedToday', 'totalCompleted');
+  saveData();
+  const title = currentChain.parentTaskTitle;
+  currentChain = null;
+  renderAll(); // re-render to reflect parent task completion
+  showToast('任务链完成：' + title + ' 🎉');
+}
+
+function abandonChain() {
+  if (!currentChain) return;
+  const parentTaskId    = currentChain.parentTaskId;
+  const parentTaskTitle = currentChain.parentTaskTitle;
+  currentChain.status   = 'abandoned';
+  // Re-lock: user must create a new chain for this task before spinning
+  data.meta.lockedByTaskId = parentTaskId;
+  saveData();
+  currentChain = null;
+  document.getElementById('chain-mode-modal').classList.add('hidden');
+  updateChainBanner();
+  updateSpinLock();
+  // Re-open split modal so user must choose a new approach
+  const parentTask = data.tasks.find(t => String(t.id) === String(parentTaskId));
+  openSplitModal(parentTask || { id: parentTaskId, title: parentTaskTitle, category: 'study', difficulty: 'easy', estimatedMinutes: 15 });
+  showToast('已重置任务链，请重新拆分 ↩');
+}
+
+function updateSpinLock() {
+  const chainActive   = !!(currentChain && currentChain.status === 'active');
+  const procrastLock  = !!data.meta.lockedByTaskId;
+  const resultPending = !!data.meta.pendingTaskResultId;
+  const locked = chainActive || procrastLock || resultPending;
+
+  const btn = document.getElementById('spin-btn');
+  const msg = document.getElementById('spin-lock-msg');
+  if (btn) btn.disabled = locked || isSpinning;
+  if (msg) {
+    if (!locked) {
+      msg.classList.add('hidden');
+    } else if (resultPending && !procrastLock && !chainActive) {
+      // Task shown in result modal; user hasn't acted yet (covers page-refresh case)
+      const t = data.tasks.find(t => String(t.id) === String(data.meta.pendingTaskResultId));
+      msg.textContent = '🔒 请先处理「' + (t ? t.title : '当前任务') + '」，才能继续抽取';
+      msg.classList.remove('hidden');
+    } else {
+      msg.textContent = '🔒 先完成当前任务链，才能继续下一轮抽取';
+      msg.classList.remove('hidden');
+    }
+  }
+}
+
+function updateChainBanner() {
+  const banner = document.getElementById('chain-banner');
+  if (!banner) return;
+  if (currentChain && currentChain.status === 'active') {
+    const done  = currentChain.steps.filter(s => s.status !== 'pending').length;
+    const total = currentChain.steps.length;
+    document.getElementById('chain-banner-title').textContent =
+      currentChain.parentTaskTitle + ' (' + done + '/' + total + ')';
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
 }
 
 function renderManualInputs(count) {
@@ -565,39 +1059,37 @@ function confirmManualSplit() {
 
 function applySplit(subtasks) {
   if (splitTaskTarget) {
-    splitTaskTarget.activeInCurrentRound = false;
-    subtasks.forEach(st => {
+    const parent = splitTaskTarget;
+    parent.activeInCurrentRound = false;
+    subtasks.forEach((st, i) => {
       data.tasks.push({
-        id:                  nextId++,
-        title:               st.title,
-        category:            splitTaskTarget.category || 'study',
-        difficulty:          'easy',
-        estimatedMinutes:    st.estimatedMinutes || 15,
-        weight:              2,
-        repeatable:          false,
-        frequency:           'once',
-        completed:           false,
-        completedCount:      0,
-        procrastinatedCount: 0,
-        skippedCount:        0,
-        activeInCurrentRound: true
+        id: nextId++, title: st.title,
+        category: parent.category || 'study', difficulty: 'easy',
+        estimatedMinutes: st.estimatedMinutes || 15, weight: 2,
+        repeatable: false, frequency: 'once',
+        completed: false, completedCount: 0, procrastinatedCount: 0, skippedCount: 0,
+        activeInCurrentRound: true,
+        isSubtask: true, subtaskOrder: i,
+        parentTaskId: String(parent.id), parentTaskTitle: parent.title, chainId: null
       });
     });
-    saveData();
-    renderAll();
+    saveData(); renderAll();
+  }
+  document.getElementById('split-modal').classList.add('hidden');
+  splitTaskTarget = null; aiGeneratedSubtasks = null;
+  showToast('已拆分为 ' + subtasks.length + ' 个子任务 ✂️');
+}
+
+function cancelSplit() {
+  // Cannot dismiss split modal while there is an active lock (procrastination)
+  if (data.meta.lockedByTaskId) {
+    showToast('请先拆分任务并完成，才能继续抽取 🔒');
+    return;
   }
   document.getElementById('split-modal').classList.add('hidden');
   splitTaskTarget     = null;
   aiGeneratedSubtasks = null;
-  showToast(`已拆分为 ${subtasks.length} 个子任务 ✂️`);
-}
-
-function cancelSplit() {
-  document.getElementById('split-modal').classList.add('hidden');
-  splitTaskTarget     = null;
-  aiGeneratedSubtasks = null;
   renderAll();
-  showToast('已记录拖延，下次简单任务概率更高 💪');
 }
 
 document.getElementById('split-backdrop').addEventListener('click', cancelSplit);
@@ -607,7 +1099,8 @@ document.getElementById('split-manual-btn').addEventListener('click', () => {
   setSplitState('manual');
 });
 document.getElementById('split-no-btn').addEventListener('click', cancelSplit);
-document.getElementById('split-accept-btn').addEventListener('click', acceptAiSplit);
+document.getElementById('split-chain-btn').addEventListener('click', startChainFromSplit);
+document.getElementById('split-spinner-btn').addEventListener('click', addToSpinnerFromSplit);
 document.getElementById('split-reject-btn').addEventListener('click', () => setSplitState('choice'));
 document.getElementById('split-retry-btn').addEventListener('click', requestAiSplit);
 document.getElementById('split-err-manual-btn').addEventListener('click', () => {
@@ -624,6 +1117,19 @@ document.getElementById('split-remove-btn').addEventListener('click', () => {
 });
 document.getElementById('split-confirm-btn').addEventListener('click', confirmManualSplit);
 document.getElementById('split-cancel-btn').addEventListener('click', cancelSplit);
+document.getElementById('chain-done-btn').addEventListener('click',    () => advanceChainStep('done'));
+document.getElementById('chain-skip-btn').addEventListener('click',    () => advanceChainStep('skipped'));
+document.getElementById('chain-abandon-btn').addEventListener('click', abandonChain);
+
+function onTaskChainClick(e) {
+  const isChainActive = currentChain !== null && currentChain.status === 'active';
+  console.log('task-chain clicked', { isChainActive, currentChain });
+  if (!isChainActive) return;
+  showChainMode();
+}
+
+document.getElementById('task-chain-btn').addEventListener('click', e => { e.stopPropagation(); onTaskChainClick(e); });
+document.getElementById('chain-banner').addEventListener('click',   onTaskChainClick);
 
 // ── Render: Rewards ────────────────────────────────────────────────────────
 function renderRewards() {
@@ -730,22 +1236,75 @@ function renderRoundProgress() {
   `;
 }
 
+// ── Stats computation ──────────────────────────────────────────────────────
+function getDateRange(tab) {
+  const now = new Date();
+  const tod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (tab === 'today') return { start: tod, end: new Date(tod.getTime() + 86400000) };
+  if (tab === 'week') {
+    const start = new Date(tod.getTime() - tod.getDay() * 86400000);
+    return { start, end: new Date(start.getTime() + 7 * 86400000) };
+  }
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  return { start, end: new Date(now.getFullYear(), now.getMonth() + 1, 1) };
+}
+
+function computeStats(tab) {
+  const { start, end } = getDateRange(tab);
+  const log = (data.meta.activityLog || []).filter(e => {
+    const t = new Date(e.timestamp); return t >= start && t < end;
+  });
+  const done = log.filter(e => e.action === 'task_done');
+  return {
+    completed: done.length,
+    estimatedMinutes: done.reduce((s, e) => s + (e.estimatedMinutes || 0), 0),
+    procrastinated: log.filter(e => e.action === 'task_procrastinated').length,
+    skipped:        log.filter(e => e.action === 'task_skipped').length,
+    rewardsBanked:  log.filter(e => e.action === 'reward_banked').length,
+    rewardsUsed:    log.filter(e => e.action === 'reward_used').length,
+    chainsCompleted: log.filter(e => e.action === 'chain_completed').length,
+    completedTasks: done
+  };
+}
+
 // ── Render: Stats ──────────────────────────────────────────────────────────
 function renderStats() {
   const el = document.getElementById('stats-panel-body');
-  const s  = data.meta && data.meta.stats;
-  if (!el || !s) return;
-  el.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-item"><span class="stat-num">${s.completedToday}</span><span class="stat-lbl">今日完成</span></div>
-      <div class="stat-item"><span class="stat-num">${s.procrastinatedToday}</span><span class="stat-lbl">今日拖延</span></div>
-      <div class="stat-item"><span class="stat-num">${s.skippedToday}</span><span class="stat-lbl">今日跳过</span></div>
-      <div class="stat-item"><span class="stat-num">${s.rewardsBankedToday}</span><span class="stat-lbl">今日存奖</span></div>
-    </div>
-    <div class="stats-total">
-      累计: 完成 ${s.totalCompleted} · 拖延 ${s.totalProcrastinated} · 跳过 ${s.totalSkipped} · 存奖 ${s.totalRewardsBanked}
-    </div>
-  `;
+  if (!el) return;
+  const s = computeStats(statsTab);
+  const TAB_LABELS = [['today','今日'],['week','本周'],['month','本月']];
+  el.innerHTML =
+    '<div class="stats-tabs">' +
+    TAB_LABELS.map(([k,lbl]) =>
+      '<button class="stats-tab' + (statsTab === k ? ' active' : '') +
+      '" data-tab="' + k + '">' + lbl + '</button>').join('') +
+    '</div>' +
+    '<div class="stats-grid">' +
+    '<div class="stat-item"><span class="stat-num">' + s.completed + '</span><span class="stat-lbl">完成任务</span></div>' +
+    '<div class="stat-item"><span class="stat-num">' + s.estimatedMinutes + '</span><span class="stat-lbl">专注分钟</span></div>' +
+    '<div class="stat-item"><span class="stat-num">' + s.procrastinated + '</span><span class="stat-lbl">拖延次数</span></div>' +
+    '<div class="stat-item"><span class="stat-num">' + s.skipped + '</span><span class="stat-lbl">跳过次数</span></div>' +
+    '</div>' +
+    '<div class="stats-row2">' +
+    '<span>🔗 任务链: ' + s.chainsCompleted + '</span>' +
+    '<span>🏦 存奖: ' + s.rewardsBanked + '</span>' +
+    '<span>🎉 用奖: ' + s.rewardsUsed + '</span>' +
+    '</div>' +
+    (s.completedTasks.length > 0
+      ? '<div class="stats-task-list">' +
+        s.completedTasks.slice(0, 5).map(e =>
+          '<div class="stats-task-item">' +
+          '<span class="stats-task-title">' + esc(e.taskTitle || '未知') + '</span>' +
+          (e.parentTaskTitle ? '<span class="stats-task-parent">↳ ' + esc(e.parentTaskTitle) + '</span>' : '') +
+          '</div>'
+        ).join('') +
+        (s.completedTasks.length > 5 ? '<div class="stats-task-more">还有 ' + (s.completedTasks.length - 5) + ' 项</div>' : '') +
+        '</div>'
+      : '');
+
+  el.querySelectorAll('.stats-tab').forEach(btn => {
+    btn.addEventListener('click', () => { statsTab = btn.dataset.tab; renderStats(); });
+  });
 }
 
 // ── updateStats (wheel-section counter) ───────────────────────────────────
@@ -773,9 +1332,15 @@ function bumpStat(todayKey, totalKey) {
 function toggleTask(id) {
   const t = data.tasks.find(t => t.id === id);
   if (t) {
-    t.completed           = !t.completed;
+    t.completed            = !t.completed;
     t.activeInCurrentRound = !t.completed;
-    if (t.completed) t.completedCount = (t.completedCount || 0) + 1;
+    if (t.completed) {
+      t.completedCount = (t.completedCount || 0) + 1;
+      // Completing a task via the task list also clears the pending result lock
+      if (String(t.id) === String(data.meta.pendingTaskResultId)) {
+        data.meta.pendingTaskResultId = null;
+      }
+    }
     saveData();
     renderAll();
   }

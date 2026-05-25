@@ -40,11 +40,9 @@ export class CompleteTaskUseCase {
 
     const updatedStats = bumpStats(stats, "completedToday", "totalCompleted");
 
-    await Promise.all([
-      this.taskRepo.update(task),
-      this.roundStateRepo.save(roundState),
-      this.statsRepo.save(updatedStats),
-    ]);
+    await this.taskRepo.update(task);
+    await this.statsRepo.save(updatedStats);
+    await this.roundStateRepo.save(roundState); // last: sets completed=true on persisted task
 
     return { task, roundState, stats: updatedStats };
   }
