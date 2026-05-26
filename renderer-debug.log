@@ -1,0 +1,18 @@
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:209) [Chain] Init: active chain = test-chain-001
+[warning] (node:electron/js2c/sandbox_bundle:2) %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[info] (:5) [TEST] task-chain-btn found: true hidden: false
+[info] (:7) [TEST] chain-banner classes: chain-banner
+[info] (:9) [TEST] chain-mode-modal classes (before click): modal hidden
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1499) [Chain] banner/btn clicked — checking active chain
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1507) [Chain] active chain found: test-chain-001 status: active steps: 2
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1197) [Chain] showChainMode called
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1222) [Chain] Showing step 0 / 1 : 打开单词本准备
+[info] (:12) [TEST] clicked task-chain-btn
+[info] (:15) [TEST] chain-mode-modal classes (after click): modal

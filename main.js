@@ -79,6 +79,39 @@ function createWindow() {
 
   win.loadFile('index.html');
   win.once('ready-to-show', () => win.show());
+
+  // Capture renderer console messages to a log file for debugging
+  const logPath = path.join(__dirname, 'renderer-debug.log');
+  win.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const prefix = ['verbose','info','warning','error'][level] || 'log';
+    const entry = `[${prefix}] (${sourceId}:${line}) ${message}\n`;
+    try { fs.appendFileSync(logPath, entry, 'utf-8'); } catch {}
+  });
+
+  // Auto-test: after 2s, click the chain banner button programmatically
+  setTimeout(() => {
+    win.webContents.executeJavaScript(`
+      (function() {
+        try {
+          var btn = document.getElementById('task-chain-btn');
+          console.log('[TEST] task-chain-btn found:', !!btn, 'hidden:', btn ? btn.closest('.hidden') !== null : 'N/A');
+          var banner = document.getElementById('chain-banner');
+          console.log('[TEST] chain-banner classes:', banner ? banner.className : 'NOT FOUND');
+          var modal = document.getElementById('chain-mode-modal');
+          console.log('[TEST] chain-mode-modal classes (before click):', modal ? modal.className : 'NOT FOUND');
+          if (btn) {
+            btn.click();
+            console.log('[TEST] clicked task-chain-btn');
+          }
+          setTimeout(function() {
+            console.log('[TEST] chain-mode-modal classes (after click):', modal ? modal.className : 'NOT FOUND');
+          }, 200);
+        } catch(e) {
+          console.error('[TEST] auto-test error:', e.message);
+        }
+      })();
+    `).catch(e => { try { fs.appendFileSync(logPath, '[main] executeJavaScript error: ' + e.message + '\\n', 'utf-8'); } catch {} });
+  }, 2000);
 }
 
 app.whenReady().then(createWindow);

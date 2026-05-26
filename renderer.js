@@ -32,11 +32,15 @@ let afterProcrastination  = false;
 let splitTaskTarget       = null;
 let aiGeneratedSubtasks   = null;
 
-// ── Timer State ────────────────────────────────────────────────────────────
-let timerInterval = null;
-let timerSeconds  = 0;
-let timerMode     = 'idle'; // 'idle' | 'up' | 'down'
-let timerEstMins  = 15;
+// ── Timer State (result modal) ─────────────────────────────────────────────
+let timerInterval   = null;
+let timerSeconds    = 0;
+let activeTimerTask = null;
+
+// ── Chain Timer State ──────────────────────────────────────────────────────
+let chainTimerInterval = null;
+let chainTimerSeconds  = 0;
+let chainTimerRunning  = false;
 
 // ── Chain & Stats State ────────────────────────────────────────────────────
 let currentChain = null;   // TaskChain currently being worked through
@@ -102,6 +106,68 @@ function migrateStats(raw) {
   };
 }
 
+// ── Meta Migration & Daily Reset ───────────────────────────────────────────
+function migrateMeta() {
+  if (!data.meta) data.meta = {};
+  if (data.meta.skipTickets                 === undefined) data.meta.skipTickets                 = data.meta.skipCards ? (data.meta.skipCards.count || 2) : 2;
+  if (data.meta.totalMinutes                === undefined) data.meta.totalMinutes                = 0;
+  if (data.meta.skipTicketsEarned           === undefined) data.meta.skipTicketsEarned           = 0;
+  if (data.meta.skipTicketsUsed             === undefined) data.meta.skipTicketsUsed             = 0;
+  if (data.meta.tasksCompletedTotal         === undefined) data.meta.tasksCompletedTotal         = data.meta.stats ? (data.meta.stats.totalCompleted || 0) : 0;
+  if (data.meta.tasksCompletedToday         === undefined) data.meta.tasksCompletedToday         = 0;
+  if (data.meta.minutesToday                === undefined) data.meta.minutesToday                = 0;
+  if (data.meta.lastOpenDate                === undefined) data.meta.lastOpenDate                = getTodayKey();
+  if (data.meta.activeDays                  === undefined) data.meta.activeDays                  = 1;
+  if (data.meta.procrastinationRecoveryCount === undefined) data.meta.procrastinationRecoveryCount = 0;
+  if (data.meta.chainCompletionCount        === undefined) data.meta.chainCompletionCount        = 0;
+  if (data.meta.stuckCount                  === undefined) data.meta.stuckCount                  = 0;
+  if (data.meta.activeChainId               === undefined) data.meta.activeChainId               = null;
+  if (!data.meta.achievements) {
+    data.meta.achievements = {
+      firstTask: false, focus60: false, focus300: false,
+      tickets3: false, ironWill: false, sprint5: false, habit7: false
+    };
+  }
+}
+
+// Normalize an existing chain to the current data model.
+function migrateChain(chain) {
+  if (!chain.source)                    chain.source      = 'manual';
+  if (chain.completedAt  === undefined) chain.completedAt = null;
+  if (chain.currentStepIndex === undefined) {
+    const lastDoneIdx = chain.steps.reduce((max, s, i) =>
+      (s.status !== 'pending' ? i : max), -1);
+    chain.currentStepIndex = Math.max(0, Math.min(lastDoneIdx + 1, chain.steps.length - 1));
+  }
+  chain.steps = chain.steps.map(s => ({
+    ...s,
+    chainId:      s.chainId      || chain.id,
+    parentTaskId: s.parentTaskId || chain.parentTaskId,
+    description:  s.description  || '',
+    // Normalize old 'done' status to 'completed'
+    status:       s.status === 'done' ? 'completed' : (s.status || 'pending'),
+    createdAt:    s.createdAt    || chain.createdAt,
+    completedAt:  s.completedAt  || null
+  }));
+  // Ensure the current step is marked active if chain is active
+  if (chain.status === 'active') {
+    const cur = chain.steps[chain.currentStepIndex];
+    if (cur && cur.status === 'pending') cur.status = 'active';
+  }
+  return chain;
+}
+
+function checkDailyReset() {
+  const todayKey = getTodayKey();
+  if (data.meta.lastOpenDate !== todayKey) {
+    if (data.meta.lastOpenDate) data.meta.activeDays = (data.meta.activeDays || 1) + 1;
+    data.meta.tasksCompletedToday = 0;
+    data.meta.minutesToday = 0;
+    data.meta.lastOpenDate = todayKey;
+    saveData();
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 function getWeekKey() {
   const d    = new Date();
@@ -123,23 +189,24 @@ async function init() {
     meta:    (raw.meta && typeof raw.meta === 'object') ? raw.meta : {}
   };
 
-  const wk = getWeekKey();
-  if (!data.meta.skipCards || data.meta.skipCards.weekKey !== wk) {
-    data.meta.skipCards = { count: 2, weekKey: wk };
-  }
-
+  migrateMeta();
+  checkDailyReset();
   data.meta.stats = migrateStats(data.meta.stats);
 
   if (!Array.isArray(data.meta.chains))      data.meta.chains      = [];
   if (!Array.isArray(data.meta.activityLog)) data.meta.activityLog = [];
-  if (data.meta.lockedByTaskId     === undefined) data.meta.lockedByTaskId     = null;
+  if (data.meta.lockedByTaskId      === undefined) data.meta.lockedByTaskId      = null;
   if (data.meta.pendingTaskResultId === undefined) data.meta.pendingTaskResultId = null;
+  // Normalize existing chains to current data model
+  data.meta.chains = data.meta.chains.map(migrateChain);
   // Defensive: if the pending task is already done, clear stale lock
   if (data.meta.pendingTaskResultId) {
     const pTask = data.tasks.find(t => String(t.id) === String(data.meta.pendingTaskResultId));
     if (!pTask || pTask.completed) data.meta.pendingTaskResultId = null;
   }
   currentChain = data.meta.chains.find(c => c.status === 'active') || null;
+  data.meta.activeChainId = currentChain ? currentChain.id : null;
+  console.log('[Chain] Init: active chain =', data.meta.activeChainId || 'none');
 
   // Restore lock: if there was a procrastination with no chain created (e.g. refresh mid-split)
   if (data.meta.lockedByTaskId && !currentChain) {
@@ -164,11 +231,22 @@ async function init() {
   renderAll();
 }
 
+// Returns the current active chain, syncing from data store if stale.
+function getActiveChain() {
+  if (!currentChain || currentChain.status !== 'active') {
+    currentChain = (data.meta.chains || []).find(c => c.status === 'active') || null;
+    data.meta.activeChainId = currentChain ? currentChain.id : null;
+  }
+  return currentChain;
+}
+
 function renderAll() {
   drawWheel();
   renderRewards();
   renderTasks();
   renderRoundProgress();
+  renderDailyCard();
+  renderAchievements();
   renderStats();
   updateStats();
   updateChainBanner();
@@ -427,7 +505,7 @@ function pickWinner(segs) {
 
 function spin() {
   if (isSpinning) return;
-  if ((currentChain && currentChain.status === 'active') || data.meta.lockedByTaskId) return;
+  if (getActiveChain() || data.meta.lockedByTaskId) return;
   const segs = getActiveSegments();
   if (segs.length === 0) return;
 
@@ -473,10 +551,23 @@ function spin() {
 }
 
 // ── Result Modal ───────────────────────────────────────────────────────────
+function showModalView(view) {
+  const views = {
+    main: 'modal-main-view', timer: 'modal-timer-view',
+    skip: 'modal-skip-view', 'task-pick': 'modal-task-pick-view',
+    stuck: 'modal-stuck-view', minimal: 'modal-minimal-view'
+  };
+  Object.entries(views).forEach(([k, id]) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', k !== view);
+  });
+}
+
 function showResult(winner) {
   currentResult = winner;
   const content = document.getElementById('modal-content');
   content.className = 'modal-content';
+  showModalView('main');
 
   if (winner.type === 'reward') {
     content.classList.add('reward-result');
@@ -500,39 +591,32 @@ function showResult(winner) {
     } else {
       parentCtx.classList.add('hidden');
     }
-    const skipCount  = data.meta && data.meta.skipCards ? data.meta.skipCards.count : 0;
-    const catLabel   = CATEGORY_LABELS[winner.item.category]  || winner.item.category  || '';
-    const diffLabel  = DIFFICULTY_LABELS[winner.item.difficulty] || winner.item.difficulty || '';
-    const mins       = winner.item.estimatedMinutes || 15;
+    const catLabel  = CATEGORY_LABELS[winner.item.category]    || winner.item.category    || '';
+    const diffLabel = DIFFICULTY_LABELS[winner.item.difficulty] || winner.item.difficulty  || '';
+    const mins      = winner.item.estimatedMinutes || 15;
     document.getElementById('modal-emoji').textContent = '📚';
     document.getElementById('modal-type').textContent  = `${catLabel}  ·  ${diffLabel}  ·  ${mins} 分钟`;
     document.getElementById('modal-title').textContent = winner.item.title;
     document.getElementById('modal-desc').textContent  = '加油！完成这个任务，你会离目标更近一步！';
     document.getElementById('modal-actions').innerHTML = `
-      <button class="btn-complete"     id="complete-task-btn">完成 ✓</button>
-      <button class="btn-procrastinate" id="procrastinate-btn">太难了，帮我拆小 ✂️</button>
-      <button class="btn-skip" id="skip-card-btn" ${skipCount === 0 ? 'disabled' : ''}>使用跳过卡 🃏 (${skipCount})</button>
+      <button class="btn-complete"      id="complete-task-btn">完成 ✓</button>
+      <button class="btn-secondary"     id="start-timer-btn">⏱️ 开始计时</button>
+      <button class="btn-procrastinate" id="procrastinate-btn">🤔 遇到困难</button>
+      <button class="btn-skip"          id="skip-btn">跳过 →</button>
     `;
     document.getElementById('complete-task-btn').addEventListener('click', completeCurrentTask);
+    document.getElementById('start-timer-btn').addEventListener('click', () => startTimer(winner.item));
     document.getElementById('procrastinate-btn').addEventListener('click', procrastinateCurrentTask);
-    document.getElementById('skip-card-btn').addEventListener('click', skipCurrentTask);
-  }
-  const timerEl = document.getElementById('modal-timer');
-  if (winner.type === 'task') {
-    timerEl.classList.remove('hidden');
-    initTimer(winner.item.estimatedMinutes || 15);
-    // Persist lock so page refresh still remembers the unresolved task
+    document.getElementById('skip-btn').addEventListener('click', showSkipView);
     data.meta.pendingTaskResultId = String(winner.item.id);
     saveData();
     updateSpinLock();
-  } else {
-    timerEl.classList.add('hidden');
   }
   document.getElementById('result-modal').classList.remove('hidden');
 }
 
 function closeResult() {
-  stopTimer(true);
+  stopActiveTimer();
   document.getElementById('result-modal').classList.add('hidden');
   currentResult = null;
 }
@@ -546,9 +630,9 @@ function completeCurrentTask() {
     task.completedCount       = (task.completedCount || 0) + 1;
     task.activeInCurrentRound = false;
   }
-  data.meta.pendingTaskResultId = null; // task resolved — unlock spin
-  saveData();
-  renderAll(); // updateSpinLock() inside will re-enable spin button
+  data.meta.pendingTaskResultId = null;
+  data.meta.tasksCompletedToday = (data.meta.tasksCompletedToday || 0) + 1;
+  data.meta.tasksCompletedTotal = (data.meta.tasksCompletedTotal || 0) + 1;
   bumpStat('completedToday', 'totalCompleted');
   logActivity('task_done', {
     taskId: String(currentResult.item.id), taskTitle: currentResult.item.title,
@@ -557,50 +641,202 @@ function completeCurrentTask() {
     category: currentResult.item.category,
     estimatedMinutes: currentResult.item.estimatedMinutes || 15
   });
+  checkAchievements();
+  saveData();
+  renderAll();
   closeResult();
   showToast('任务完成！继续加油 🎉');
 }
 
 function procrastinateCurrentTask() {
   if (!currentResult || currentResult.type !== 'task') return;
-  const task = data.tasks.find(t => t.id === currentResult.item.id);
-  if (task) {
-    task.procrastinatedCount = (task.procrastinatedCount || 0) + 1;
+  // Show the stuck-reason picker first; locking and decomposition happen after user picks a reason
+  showStuckView();
+}
+
+// ── Stuck flow ────────────────────────────────────────────────────────────
+const STUCK_REASONS = {
+  whereToStart: {
+    label: '🤷 不知道从哪里开始',
+    emoji: '🗺️', header: '先画出地图',
+    action: '花3分钟，在纸上写下你认为这个任务的第一步是什么——哪怕只是一个模糊的想法。',
+    tip: '把想法写出来能激活执行脑区。不需要正确，只需要开始。',
+    mins: 3, decompose: true
+  },
+  tooHard: {
+    label: '💪 太难了，超出能力',
+    emoji: '🔬', header: '先只看，不做',
+    action: '只打开相关文件或材料，浏览一遍，不需要理解，也不需要做任何事。',
+    tip: '任务感觉难，往往是因为它太抽象。光是"看一眼"就能让大脑开始处理。',
+    mins: 5, decompose: true
+  },
+  tooBoring: {
+    label: '😴 太无聊了，不想做',
+    emoji: '⚡', header: '5分钟挑战',
+    action: '就做5分钟，之后可以随时停。打开任务，设好计时器，开始。',
+    tip: '无聊感通常在开始后迅速消退。给自己一个"只做5分钟"的许可。',
+    mins: 5, decompose: false
+  },
+  tooTired: {
+    label: '😩 状态不好，太累了',
+    emoji: '🌿', header: '先恢复状态',
+    action: '喝一杯水，站起来动一动，深呼吸3次，5分钟后再回来。',
+    tip: '强撑着工作效率极低。短暂恢复后的5分钟 > 精疲力竭的30分钟。',
+    mins: 5, decompose: false, useTicket: true
+  },
+  missingMaterials: {
+    label: '📦 缺少必要材料或信息',
+    emoji: '📋', header: '先列清单',
+    action: '花5分钟，列出你需要但现在没有的所有东西。写完后决定怎么获取。',
+    tip: '列清单本身就是在推进任务——你在把"不知道缺什么"变成"知道缺什么"。',
+    mins: 5, decompose: true
+  },
+  fearOfFailure: {
+    label: '😰 害怕做不好，有点焦虑',
+    emoji: '🎭', header: '做"草稿"版本',
+    action: '告诉自己这只是草稿，可以很糟糕。先把任何东西放进去，不考虑质量。',
+    tip: '完美主义是行动的最大杀手。"写一个烂开头"比"什么都没有"强100倍。',
+    mins: 10, decompose: true
   }
+};
+
+let currentStuckReason = null;
+
+function showStuckView() {
+  if (!currentResult || currentResult.type !== 'task') return;
+  document.getElementById('stuck-task-ctx').textContent = '「' + currentResult.item.title + '」';
+  const reasonsEl = document.getElementById('stuck-reasons');
+  reasonsEl.innerHTML = Object.entries(STUCK_REASONS).map(([key, r]) =>
+    `<button class="stuck-reason-btn" data-reason="${key}">${r.label}</button>`
+  ).join('');
+  reasonsEl.querySelectorAll('.stuck-reason-btn').forEach(btn => {
+    btn.addEventListener('click', () => showMinimalView(btn.dataset.reason));
+  });
+  showModalView('stuck');
+}
+
+function showMinimalView(reasonKey) {
+  const reason = STUCK_REASONS[reasonKey];
+  if (!reason) return;
+  currentStuckReason = reasonKey;
+
+  document.getElementById('minimal-view-emoji').textContent   = reason.emoji;
+  document.getElementById('minimal-view-header').textContent  = reason.header;
+  document.getElementById('minimal-view-action').textContent  = reason.action;
+  document.getElementById('minimal-view-tip').textContent     = '💡 ' + reason.tip;
+
+  const actionsEl = document.getElementById('minimal-actions');
+  const btns = [`<button class="btn-complete" id="minimal-start-btn">⏱️ 计时${reason.mins}分钟，开始</button>`];
+  if (reason.decompose) btns.push(`<button class="btn-secondary" id="minimal-decompose-btn">✂️ 拆分任务</button>`);
+  if (reason.useTicket) btns.push(`<button class="btn-secondary" id="minimal-ticket-btn">🎫 使用跳过券</button>`);
+  actionsEl.innerHTML = btns.join('');
+
+  document.getElementById('minimal-start-btn').addEventListener('click', () => {
+    data.meta.stuckCount = (data.meta.stuckCount || 0) + 1;
+    saveData();
+    // Start a brief timer on the minimal action; completing it marks the whole task done
+    const minTask = { ...currentResult.item, title: reason.header + '：' + currentResult.item.title, estimatedMinutes: reason.mins };
+    startTimer(minTask);
+  });
+  const decompBtn = document.getElementById('minimal-decompose-btn');
+  if (decompBtn) decompBtn.addEventListener('click', minimalDecompose);
+  const ticketBtn = document.getElementById('minimal-ticket-btn');
+  if (ticketBtn) ticketBtn.addEventListener('click', () => showSkipView());
+
+  showModalView('minimal');
+}
+
+function minimalDecompose() {
+  if (!currentResult || currentResult.type !== 'task') return;
+  const task = data.tasks.find(t => t.id === currentResult.item.id);
+  if (task) task.procrastinatedCount = (task.procrastinatedCount || 0) + 1;
   bumpStat('procrastinatedToday', 'totalProcrastinated');
   logActivity('task_procrastinated', {
     taskId: String(currentResult.item.id), taskTitle: currentResult.item.title,
     category: currentResult.item.category
   });
-  // Lock spin — user must complete a task chain before spinning again
-  data.meta.pendingTaskResultId = null; // transitions to lockedByTaskId
+  data.meta.stuckCount          = (data.meta.stuckCount || 0) + 1;
+  data.meta.pendingTaskResultId = null;
   data.meta.lockedByTaskId      = String(currentResult.item.id);
   saveData();
+  console.log('[Stuck] User chose decompose — locking task', data.meta.lockedByTaskId);
   closeResult();
   openSplitModal(task || currentResult.item);
 }
 
-function skipCurrentTask() {
-  if (!currentResult || currentResult.type !== 'task') return;
-  if (!data.meta.skipCards || data.meta.skipCards.count <= 0) return;
-  data.meta.skipCards.count--;
-  data.meta.pendingTaskResultId = null; // skip card resolves the result — unlock spin
-  const task = data.tasks.find(t => t.id === currentResult.item.id);
-  if (task) {
-    task.skippedCount = (task.skippedCount || 0) + 1;
-    // Task remains activeInCurrentRound — skip card does not permanently remove it
-  }
-  bumpStat('skippedToday', 'totalSkipped');
-  logActivity('task_skipped', {
-    taskId: String(currentResult.item.id), taskTitle: currentResult.item.title,
-    category: currentResult.item.category
-  });
-  saveData();
-  renderAll(); // updateSpinLock() inside will re-enable spin button
-  const remaining = data.meta.skipCards.count;
-  closeResult();
-  showToast(`任务已跳过！还剩 ${remaining} 张跳过卡 🃏`);
+document.getElementById('stuck-back-btn').addEventListener('click', () => showModalView('main'));
+document.getElementById('minimal-back-btn').addEventListener('click', () => showModalView('stuck'));
+
+// ── Skip flow ──────────────────────────────────────────────────────────────
+function showSkipView() {
+  const tickets = data.meta.skipTickets || 0;
+  document.getElementById('skip-ticket-sub').textContent = `剩余 ${tickets} 张`;
+  const useBtn = document.getElementById('skip-use-ticket-btn');
+  if (useBtn) useBtn.disabled = tickets <= 0;
+  showModalView('skip');
 }
+
+function showTaskPickView() {
+  const available = data.tasks.filter(t =>
+    t.activeInCurrentRound && !t.completed &&
+    (!currentResult || String(t.id) !== String(currentResult.item.id))
+  );
+  const list = document.getElementById('skip-task-list');
+  if (available.length === 0) {
+    list.innerHTML = '<div class="empty-state">没有其他可用任务</div>';
+  } else {
+    list.innerHTML = available.map(t => `
+      <button class="skip-task-item" data-id="${t.id}">
+        <span class="skip-task-title">${esc(t.title)}</span>
+        <span class="skip-task-meta">${t.estimatedMinutes || 15}分</span>
+      </button>
+    `).join('');
+    list.querySelectorAll('.skip-task-item').forEach(btn => {
+      btn.addEventListener('click', () => doPickTask(+btn.dataset.id));
+    });
+  }
+  showModalView('task-pick');
+}
+
+function doPickTask(taskId) {
+  if (!currentResult || currentResult.type !== 'task') return;
+  const skippedTask = data.tasks.find(t => t.id === currentResult.item.id);
+  if (skippedTask) skippedTask.skippedCount = (skippedTask.skippedCount || 0) + 1;
+  data.meta.pendingTaskResultId = null;
+  bumpStat('skippedToday', 'totalSkipped');
+  logActivity('task_skipped', { taskId: String(currentResult.item.id), taskTitle: currentResult.item.title, category: currentResult.item.category });
+  saveData();
+  renderAll();
+  closeResult();
+  const pickedTask = data.tasks.find(t => t.id === taskId);
+  if (pickedTask) {
+    showResult({ type: 'task', item: pickedTask });
+  } else {
+    showToast('已跳过当前任务');
+  }
+}
+
+function doUseTicket() {
+  if (!currentResult || currentResult.type !== 'task') return;
+  if ((data.meta.skipTickets || 0) <= 0) { showToast('没有跳过券了 🎫'); return; }
+  data.meta.skipTickets--;
+  data.meta.skipTicketsUsed = (data.meta.skipTicketsUsed || 0) + 1;
+  const task = data.tasks.find(t => t.id === currentResult.item.id);
+  if (task) task.skippedCount = (task.skippedCount || 0) + 1;
+  data.meta.pendingTaskResultId = null;
+  bumpStat('skippedToday', 'totalSkipped');
+  logActivity('task_skipped', { taskId: String(currentResult.item.id), taskTitle: currentResult.item.title, category: currentResult.item.category });
+  saveData();
+  renderAll();
+  const remaining = data.meta.skipTickets;
+  closeResult();
+  showToast(`使用跳过券休息！还剩 ${remaining} 张 🎫`);
+}
+
+document.getElementById('skip-back-btn').addEventListener('click', () => showModalView('main'));
+document.getElementById('skip-pick-task-btn').addEventListener('click', showTaskPickView);
+document.getElementById('skip-use-ticket-btn').addEventListener('click', doUseTicket);
+document.getElementById('skip-task-back-btn').addEventListener('click', () => showModalView('skip'));
 
 // ── Reward result actions ──────────────────────────────────────────────────
 function useRewardNow() {
@@ -644,112 +880,102 @@ function logActivity(action, details) {
   data.meta.activityLog.push({ id: generateId(), timestamp: new Date().toISOString(), action, ...details });
 }
 
-// ── Timer ──────────────────────────────────────────────────────────────────
-function initTimer(estimatedMinutes) {
-  stopTimer(true);
-  timerEstMins = estimatedMinutes || 15;
+// ── Timer (stopwatch) ──────────────────────────────────────────────────────
+function startTimer(task) {
+  activeTimerTask = task;
   timerSeconds = 0;
-  timerMode    = 'idle';
-  document.getElementById('timer-est-input').value = timerEstMins;
-  document.getElementById('timer-display').textContent = '00:00';
-  document.getElementById('timer-result').className = 'timer-result hidden';
-  document.getElementById('timer-result').textContent = '';
-  document.getElementById('timer-up-btn').classList.remove('hidden');
-  document.getElementById('timer-down-btn').classList.remove('hidden');
-  document.getElementById('timer-stop-btn').classList.add('hidden');
-}
-
-function startTimerUp() {
-  stopTimer(true);
-  timerMode    = 'up';
-  timerSeconds = 0;
-  document.getElementById('timer-up-btn').classList.add('hidden');
-  document.getElementById('timer-down-btn').classList.add('hidden');
-  document.getElementById('timer-stop-btn').classList.remove('hidden');
-  document.getElementById('timer-result').className = 'timer-result hidden';
+  clearInterval(timerInterval);
+  document.getElementById('timer-view-task').textContent = task.title;
+  document.getElementById('timer-view-display').textContent = '00:00';
+  showModalView('timer');
   timerInterval = setInterval(() => {
     timerSeconds++;
-    updateTimerDisplay();
+    const m = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
+    const s = (timerSeconds % 60).toString().padStart(2, '0');
+    document.getElementById('timer-view-display').textContent = `${m}:${s}`;
   }, 1000);
 }
 
-function startTimerDown() {
-  stopTimer(true);
-  timerEstMins  = parseInt(document.getElementById('timer-est-input').value) || 15;
-  timerMode     = 'down';
-  timerSeconds  = timerEstMins * 60;
-  document.getElementById('timer-up-btn').classList.add('hidden');
-  document.getElementById('timer-down-btn').classList.add('hidden');
-  document.getElementById('timer-stop-btn').classList.remove('hidden');
-  document.getElementById('timer-result').className = 'timer-result hidden';
-  timerInterval = setInterval(() => {
-    timerSeconds = Math.max(0, timerSeconds - 1);
-    updateTimerDisplay();
-    if (timerSeconds <= 0) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-      timerMode = 'idle';
-      document.getElementById('timer-up-btn').classList.remove('hidden');
-      document.getElementById('timer-down-btn').classList.remove('hidden');
-      document.getElementById('timer-stop-btn').classList.add('hidden');
-      showTimerCompare(timerEstMins * 60);
-    }
+function stopActiveTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+  const mins = Math.floor(timerSeconds / 60);
+  timerSeconds = 0;
+  activeTimerTask = null;
+  return mins;
+}
+
+function completeTimedTask() {
+  const mins = stopActiveTimer();
+  if (mins > 0) addStudyMinutes(mins);
+  completeCurrentTask();
+}
+
+function stopTimerOnly() {
+  const mins = stopActiveTimer();
+  if (mins > 0) addStudyMinutes(mins);
+  showModalView('main');
+}
+
+document.getElementById('timer-complete-btn').addEventListener('click', completeTimedTask);
+document.getElementById('timer-stop-new-btn').addEventListener('click', stopTimerOnly);
+
+// ── Chain Timer ────────────────────────────────────────────────────────────
+function updateChainTimerDisplay() {
+  const el = document.getElementById('chain-timer-display');
+  if (!el) return;
+  const m = Math.floor(chainTimerSeconds / 60).toString().padStart(2, '0');
+  const s = (chainTimerSeconds % 60).toString().padStart(2, '0');
+  el.textContent = `${m}:${s}`;
+  el.classList.toggle('running', chainTimerRunning);
+}
+
+function startChainTimer() {
+  chainTimerRunning = true;
+  const btn = document.getElementById('chain-timer-btn');
+  if (btn) { btn.textContent = '⏸ 暂停'; btn.classList.add('pausing'); }
+  chainTimerInterval = setInterval(() => {
+    chainTimerSeconds++;
+    updateChainTimerDisplay();
   }, 1000);
 }
 
-function stopTimer(silent) {
-  if (timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
-  if (!silent && timerMode !== 'idle') {
-    const prevMode = timerMode;
-    const elapsed  = prevMode === 'up' ? timerSeconds : (timerEstMins * 60 - timerSeconds);
-    timerMode = 'idle';
-    document.getElementById('timer-up-btn').classList.remove('hidden');
-    document.getElementById('timer-down-btn').classList.remove('hidden');
-    document.getElementById('timer-stop-btn').classList.add('hidden');
-    showTimerCompare(elapsed);
-  } else {
-    timerMode = 'idle';
-  }
+function pauseChainTimer() {
+  chainTimerRunning = false;
+  clearInterval(chainTimerInterval);
+  chainTimerInterval = null;
+  const btn = document.getElementById('chain-timer-btn');
+  if (btn) { btn.textContent = '▶ 继续计时'; btn.classList.remove('pausing'); }
+  updateChainTimerDisplay();
 }
 
-function updateTimerDisplay() {
-  const secs = Math.abs(timerSeconds);
-  const m = Math.floor(secs / 60).toString().padStart(2, '0');
-  const s = (secs % 60).toString().padStart(2, '0');
-  document.getElementById('timer-display').textContent = `${m}:${s}`;
+function toggleChainTimer() {
+  if (chainTimerRunning) pauseChainTimer();
+  else startChainTimer();
 }
 
-function showTimerCompare(elapsedSeconds) {
-  const estSecs    = timerEstMins * 60;
-  const diff       = elapsedSeconds - estSecs;
-  const absDiffMin = Math.round(Math.abs(diff) / 60);
-  const actualMin  = Math.round(elapsedSeconds / 60);
-  const el         = document.getElementById('timer-result');
-
-  let msg, cls;
-  if (Math.abs(diff) <= 300) {
-    msg = `✅ 完美！用时 ${actualMin} 分钟，与预估相差不超过 5 分钟`;
-    cls = 'timer-result timer-ok';
-  } else if (diff > 0) {
-    msg = `⏰ 超时了 ${absDiffMin} 分钟（用时 ${actualMin} 分，预估 ${timerEstMins} 分）`;
-    cls = 'timer-result timer-over';
-  } else {
-    msg = `⚡ 提前完成！节省了 ${absDiffMin} 分钟（用时 ${actualMin} 分，预估 ${timerEstMins} 分）`;
-    cls = 'timer-result timer-under';
-  }
-  el.textContent = msg;
-  el.className = cls;
+// Stops timer, returns elapsed minutes, resets seconds to 0
+function flushChainTimer() {
+  clearInterval(chainTimerInterval);
+  chainTimerInterval = null;
+  chainTimerRunning  = false;
+  const mins = Math.floor(chainTimerSeconds / 60);
+  chainTimerSeconds  = 0;
+  const btn = document.getElementById('chain-timer-btn');
+  if (btn) { btn.textContent = '⏱ 开始计时'; btn.classList.remove('pausing'); }
+  updateChainTimerDisplay();
+  return mins;
 }
 
-document.getElementById('timer-up-btn').addEventListener('click', startTimerUp);
-document.getElementById('timer-down-btn').addEventListener('click', startTimerDown);
-document.getElementById('timer-stop-btn').addEventListener('click', () => stopTimer(false));
-document.getElementById('timer-est-input').addEventListener('change', () => {
-  timerEstMins = parseInt(document.getElementById('timer-est-input').value) || 15;
-});
+function closeChainModal() {
+  const mins = flushChainTimer();
+  if (mins > 0) addStudyMinutes(mins);
+  document.getElementById('chain-mode-modal').classList.add('hidden');
+}
+
+document.getElementById('chain-timer-btn').addEventListener('click', toggleChainTimer);
+document.getElementById('chain-close-btn').addEventListener('click', closeChainModal);
+document.getElementById('chain-mode-backdrop').addEventListener('click', closeChainModal);
 
 // ── Split Modal ────────────────────────────────────────────────────────────
 // States: 'choice' | 'loading' | 'results' | 'error' | 'manual'
@@ -891,28 +1117,70 @@ function collectSplitTasks() {
   return all;
 }
 
+// ── createTaskChain: single entry point for all chain creation paths ─────────
+function createTaskChain(parent, subtasks, source) {
+  if (!parent) { console.warn('[Chain] createTaskChain: parent is null'); return null; }
+  if (!subtasks || subtasks.length === 0) { console.warn('[Chain] createTaskChain: no subtasks'); return null; }
+
+  // Cancel any stale active chain (defensive — should not happen normally)
+  const existingActive = (data.meta.chains || []).find(c => c.status === 'active');
+  if (existingActive) {
+    console.warn('[Chain] createTaskChain: cancelling stale active chain', existingActive.id);
+    existingActive.status = 'cancelled';
+    existingActive.completedAt = new Date().toISOString();
+  }
+
+  const chainId = generateId();
+  const now     = new Date().toISOString();
+  const chain   = {
+    id: chainId,
+    parentTaskId:    String(parent.id),
+    parentTaskTitle: parent.title,
+    source:          source || 'manual', // 'ai' | 'manual' | 'procrastination' | 'template'
+    status:          'active',
+    currentStepIndex: 0,
+    createdAt:  now,
+    completedAt: null,
+    steps: subtasks.map((t, i) => ({
+      id:               generateId(),
+      chainId:          chainId,
+      parentTaskId:     String(parent.id),
+      title:            t.title,
+      description:      t.description || '',
+      estimatedMinutes: t.estimatedMinutes || 15,
+      status:           i === 0 ? 'active' : 'pending', // first step starts active
+      order:            i,
+      createdAt:        now,
+      completedAt:      null
+    }))
+  };
+
+  console.log('[Chain] Created chain', chainId, '| source:', source, '| steps:', chain.steps.length);
+
+  if (!data.meta.chains) data.meta.chains = [];
+  data.meta.chains.push(chain);
+  currentChain             = chain;
+  data.meta.activeChainId  = chainId;
+  parent.activeInCurrentRound = false;
+  data.meta.lockedByTaskId = null; // chain is the lock from now on
+
+  logActivity('chain_started', {
+    taskId: chainId, taskTitle: parent.title,
+    parentTaskId: String(parent.id), parentTaskTitle: parent.title,
+    category: parent.category, source
+  });
+  return chain;
+}
+
 function startChainFromSplit() {
   if (!splitTaskTarget) return;
   const tasks = collectSplitTasks();
   if (tasks.length === 0) { cancelSplit(); return; }
-
-  const parent  = splitTaskTarget;
-  const chainId = generateId();
-  const chain   = {
-    id: chainId, parentTaskId: String(parent.id), parentTaskTitle: parent.title,
-    status: 'active', createdAt: new Date().toISOString(),
-    steps: tasks.map((t, i) => ({ id: generateId(), title: t.title,
-      estimatedMinutes: t.estimatedMinutes, status: 'pending', order: i }))
-  };
-  if (!data.meta.chains) data.meta.chains = [];
-  data.meta.chains.push(chain);
-  currentChain = chain;
-  parent.activeInCurrentRound = false;
-  data.meta.lockedByTaskId = null; // chain itself is now the lock
-  logActivity('chain_started', { taskId: chainId, taskTitle: parent.title,
-    parentTaskId: String(parent.id), parentTaskTitle: parent.title, category: parent.category });
+  // Determine source: if AI results are visible, it's 'ai'; otherwise 'manual'
+  const source = aiGeneratedSubtasks ? 'ai' : 'manual';
+  const chain  = createTaskChain(splitTaskTarget, tasks, source);
+  if (!chain) { cancelSplit(); return; }
   saveData(); renderAll();
-
   document.getElementById('split-modal').classList.add('hidden');
   splitTaskTarget = null; aiGeneratedSubtasks = null;
   showChainMode();
@@ -926,79 +1194,166 @@ function addToSpinnerFromSplit() {
 
 // ── Task Chain ────────────────────────────────────────────────────────────
 function showChainMode() {
-  if (!currentChain) return;
-  const step = currentChain.steps.find(s => s.status === 'pending');
-  if (!step) { finishChain(); return; }
-  const done  = currentChain.steps.filter(s => s.status !== 'pending').length;
-  const total = currentChain.steps.length;
-  document.getElementById('chain-parent-title').textContent = currentChain.parentTaskTitle;
+  console.log('[Chain] showChainMode called');
+  const chain = getActiveChain();
+  if (!chain) {
+    console.warn('[Chain] showChainMode: no active chain');
+    return;
+  }
+  if (!Array.isArray(chain.steps) || chain.steps.length === 0) {
+    console.warn('[Chain] showChainMode: chain has no steps — finishing');
+    finishChain();
+    return;
+  }
+
+  // Ensure currentStepIndex points to an active/pending step
+  let step = chain.steps[chain.currentStepIndex];
+  if (!step || (step.status !== 'active' && step.status !== 'pending')) {
+    const nextIdx = chain.steps.findIndex(s => s.status === 'pending' || s.status === 'active');
+    if (nextIdx === -1) { finishChain(); return; }
+    chain.currentStepIndex = nextIdx;
+    step = chain.steps[nextIdx];
+  }
+  if (step.status === 'pending') step.status = 'active';
+
+  const done  = chain.steps.filter(s => s.status === 'completed' || s.status === 'skipped').length;
+  const total = chain.steps.length;
+
+  console.log('[Chain] Showing step', chain.currentStepIndex, '/', total - 1, ':', step.title);
+
+  document.getElementById('chain-parent-title').textContent = chain.parentTaskTitle;
   document.getElementById('chain-progress').textContent     = `步骤 ${done + 1} / ${total}`;
   document.getElementById('chain-step-title').textContent   = step.title;
   document.getElementById('chain-step-mins').textContent    = `预计 ${step.estimatedMinutes} 分钟`;
   document.getElementById('chain-progress-bar').style.width = Math.round((done / total) * 100) + '%';
-  document.getElementById('chain-skip-btn').classList.add('hidden'); // no skipping chain steps
+  document.getElementById('chain-skip-btn').classList.add('hidden');
+
+  // 鼓励文案：还剩几步（不含当前这步）
+  const remaining = total - done - 1;
+  const encourageEl = document.getElementById('chain-encourage');
+  if (encourageEl) {
+    if (remaining === 0) {
+      encourageEl.textContent = '最后一步！冲！🔥';
+      encourageEl.style.color = '#f97316';
+    } else if (remaining === 1) {
+      encourageEl.textContent = '还剩 1 步，完成后大任务解锁 🔓';
+      encourageEl.style.color = '#a78bfa';
+    } else {
+      encourageEl.textContent = `还剩 ${remaining} 步，加油！💪`;
+      encourageEl.style.color = 'var(--text-secondary)';
+    }
+  }
+
+  // 如果没在计时则重置计时器显示（切到新步骤时归零）
+  if (!chainTimerRunning) {
+    chainTimerSeconds = 0;
+    updateChainTimerDisplay();
+    const btn = document.getElementById('chain-timer-btn');
+    if (btn) { btn.textContent = '⏱ 开始计时'; btn.classList.remove('pausing'); }
+  }
+
   document.getElementById('chain-mode-modal').classList.remove('hidden');
 }
 
-function advanceChainStep(status) {
-  if (!currentChain) return;
-  const step = currentChain.steps.find(s => s.status === 'pending');
-  if (!step) return;
-  step.status = status;
-  saveData();
-  const next = currentChain.steps.find(s => s.status === 'pending');
-  if (!next) { document.getElementById('chain-mode-modal').classList.add('hidden'); finishChain(); }
-  else showChainMode();
+function advanceChainStep(stepStatus) {
+  const chain = getActiveChain();
+  if (!chain) return;
+
+  // 停计时器并记录本步骤时间
+  const mins = flushChainTimer();
+  if (mins > 0) addStudyMinutes(mins);
+
+  const step = chain.steps[chain.currentStepIndex];
+  if (!step) { console.warn('[Chain] advanceChainStep: no step at index', chain.currentStepIndex); finishChain(); return; }
+
+  step.status      = stepStatus; // 'completed' | 'skipped'
+  step.completedAt = new Date().toISOString();
+  console.log('[Chain] Step', chain.currentStepIndex, 'marked', stepStatus);
+
+  // Find the next pending step
+  const nextIdx = chain.steps.findIndex((s, i) => i > chain.currentStepIndex && s.status === 'pending');
+  if (nextIdx === -1) {
+    document.getElementById('chain-mode-modal').classList.add('hidden');
+    finishChain();
+  } else {
+    chain.currentStepIndex       = nextIdx;
+    chain.steps[nextIdx].status  = 'active';
+    console.log('[Chain] Advancing to step', nextIdx);
+    saveData();
+    showChainMode();
+  }
 }
 
 function finishChain() {
-  if (!currentChain) return;
-  currentChain.status = 'completed';
-  currentChain.completedAt = new Date().toISOString();
-  // Mark the original parent task as completed
-  const parentTask = data.tasks.find(t => String(t.id) === String(currentChain.parentTaskId));
+  const chain = getActiveChain() || currentChain;
+  if (!chain) { console.warn('[Chain] finishChain: no chain to finish'); return; }
+
+  console.log('[Chain] Finishing chain', chain.id, '| source:', chain.source);
+
+  chain.status      = 'completed';
+  chain.completedAt = new Date().toISOString();
+  currentChain      = null;
+  data.meta.activeChainId = null;
+
+  const parentTask = data.tasks.find(t => String(t.id) === String(chain.parentTaskId));
   if (parentTask) {
     parentTask.completed            = true;
     parentTask.completedCount       = (parentTask.completedCount || 0) + 1;
     parentTask.activeInCurrentRound = false;
   }
-  data.meta.lockedByTaskId = null; // chain done — spin is now allowed
-  logActivity('chain_completed', { taskId: currentChain.id, taskTitle: currentChain.parentTaskTitle,
-    parentTaskId: currentChain.parentTaskId, parentTaskTitle: currentChain.parentTaskTitle });
+
+  data.meta.lockedByTaskId      = null;
+  data.meta.tasksCompletedToday = (data.meta.tasksCompletedToday || 0) + 1;
+  data.meta.tasksCompletedTotal = (data.meta.tasksCompletedTotal || 0) + 1;
+  data.meta.chainCompletionCount = (data.meta.chainCompletionCount || 0) + 1;
+  if (chain.source === 'procrastination') {
+    data.meta.procrastinationRecoveryCount = (data.meta.procrastinationRecoveryCount || 0) + 1;
+  }
+
+  logActivity('chain_completed', {
+    taskId: chain.id, taskTitle: chain.parentTaskTitle,
+    parentTaskId: chain.parentTaskId, parentTaskTitle: chain.parentTaskTitle, source: chain.source
+  });
   logActivity('task_done', {
-    taskId: currentChain.parentTaskId, taskTitle: currentChain.parentTaskTitle,
+    taskId: chain.parentTaskId, taskTitle: chain.parentTaskTitle,
     parentTaskId: null, parentTaskTitle: null,
     category: parentTask ? parentTask.category : 'study',
     estimatedMinutes: parentTask ? parentTask.estimatedMinutes : 0
   });
   bumpStat('completedToday', 'totalCompleted');
+  checkAchievements();
   saveData();
-  const title = currentChain.parentTaskTitle;
-  currentChain = null;
-  renderAll(); // re-render to reflect parent task completion
-  showToast('任务链完成：' + title + ' 🎉');
+  renderAll();
+  showToast('任务链完成：' + chain.parentTaskTitle + ' 🎉');
 }
 
 function abandonChain() {
-  if (!currentChain) return;
-  const parentTaskId    = currentChain.parentTaskId;
-  const parentTaskTitle = currentChain.parentTaskTitle;
-  currentChain.status   = 'abandoned';
-  // Re-lock: user must create a new chain for this task before spinning
+  // 先停链式计时器，保留已计时的分钟数
+  const mins = flushChainTimer();
+  if (mins > 0) addStudyMinutes(mins);
+
+  const chain = getActiveChain();
+  if (!chain) return;
+  const parentTaskId    = chain.parentTaskId;
+  const parentTaskTitle = chain.parentTaskTitle;
+  chain.status          = 'cancelled';
+  chain.completedAt     = new Date().toISOString();
+  currentChain          = null;
+  data.meta.activeChainId = null;
+  // Re-lock: user must create a new chain before spinning again
   data.meta.lockedByTaskId = parentTaskId;
+  console.log('[Chain] Abandoned chain', chain.id, '— re-locking task', parentTaskId);
   saveData();
-  currentChain = null;
   document.getElementById('chain-mode-modal').classList.add('hidden');
   updateChainBanner();
   updateSpinLock();
-  // Re-open split modal so user must choose a new approach
   const parentTask = data.tasks.find(t => String(t.id) === String(parentTaskId));
   openSplitModal(parentTask || { id: parentTaskId, title: parentTaskTitle, category: 'study', difficulty: 'easy', estimatedMinutes: 15 });
   showToast('已重置任务链，请重新拆分 ↩');
 }
 
 function updateSpinLock() {
-  const chainActive   = !!(currentChain && currentChain.status === 'active');
+  const chainActive   = !!getActiveChain();
   const procrastLock  = !!data.meta.lockedByTaskId;
   const resultPending = !!data.meta.pendingTaskResultId;
   const locked = chainActive || procrastLock || resultPending;
@@ -1024,15 +1379,26 @@ function updateSpinLock() {
 function updateChainBanner() {
   const banner = document.getElementById('chain-banner');
   if (!banner) return;
-  if (currentChain && currentChain.status === 'active') {
-    const done  = currentChain.steps.filter(s => s.status !== 'pending').length;
-    const total = currentChain.steps.length;
-    document.getElementById('chain-banner-title').textContent =
-      currentChain.parentTaskTitle + ' (' + done + '/' + total + ')';
-    banner.classList.remove('hidden');
-  } else {
-    banner.classList.add('hidden');
+  const chain = getActiveChain();
+  if (!chain) { banner.classList.add('hidden'); return; }
+
+  const total = chain.steps.length;
+  const doneCount = chain.steps.filter(s => s.status === 'completed' || s.status === 'skipped').length;
+  const currentStep = chain.steps[chain.currentStepIndex];
+
+  // Guard: if index is past all steps, finish instead of showing stale banner
+  if (!currentStep || (currentStep.status !== 'active' && currentStep.status !== 'pending')) {
+    const hasMore = chain.steps.some(s => s.status === 'pending' || s.status === 'active');
+    if (!hasMore) {
+      console.warn('[Chain] updateChainBanner: no active/pending steps — finishing chain');
+      finishChain();
+      return;
+    }
   }
+
+  document.getElementById('chain-banner-title').textContent =
+    chain.parentTaskTitle + ' (' + doneCount + '/' + total + ')';
+  banner.classList.remove('hidden');
 }
 
 function renderManualInputs(count) {
@@ -1054,7 +1420,14 @@ function confirmManualSplit() {
   const names = [...document.querySelectorAll('.split-input')]
     .map(el => el.value.trim()).filter(Boolean);
   if (names.length === 0) { cancelSplit(); return; }
-  applySplit(names.map(title => ({ title, estimatedMinutes: 15 })));
+  if (!splitTaskTarget) { cancelSplit(); return; }
+  const source = data.meta.lockedByTaskId ? 'procrastination' : 'manual';
+  const chain  = createTaskChain(splitTaskTarget, names.map(title => ({ title, estimatedMinutes: 15 })), source);
+  if (!chain) { cancelSplit(); return; }
+  saveData(); renderAll();
+  document.getElementById('split-modal').classList.add('hidden');
+  splitTaskTarget = null; aiGeneratedSubtasks = null;
+  showChainMode();
 }
 
 function applySplit(subtasks) {
@@ -1073,6 +1446,7 @@ function applySplit(subtasks) {
         parentTaskId: String(parent.id), parentTaskTitle: parent.title, chainId: null
       });
     });
+    data.meta.lockedByTaskId = null; // subtasks are now in the spinner — release lock
     saveData(); renderAll();
   }
   document.getElementById('split-modal').classList.add('hidden');
@@ -1117,15 +1491,31 @@ document.getElementById('split-remove-btn').addEventListener('click', () => {
 });
 document.getElementById('split-confirm-btn').addEventListener('click', confirmManualSplit);
 document.getElementById('split-cancel-btn').addEventListener('click', cancelSplit);
-document.getElementById('chain-done-btn').addEventListener('click',    () => advanceChainStep('done'));
+document.getElementById('chain-done-btn').addEventListener('click',    () => advanceChainStep('completed'));
 document.getElementById('chain-skip-btn').addEventListener('click',    () => advanceChainStep('skipped'));
 document.getElementById('chain-abandon-btn').addEventListener('click', abandonChain);
 
 function onTaskChainClick(e) {
-  const isChainActive = currentChain !== null && currentChain.status === 'active';
-  console.log('task-chain clicked', { isChainActive, currentChain });
-  if (!isChainActive) return;
-  showChainMode();
+  console.log('[Chain] banner/btn clicked — checking active chain');
+  try {
+    const chain = getActiveChain();
+    if (!chain) {
+      console.warn('[Chain] task-chain clicked but no active chain — hiding banner');
+      updateChainBanner();
+      return;
+    }
+    console.log('[Chain] active chain found:', chain.id, 'status:', chain.status, 'steps:', chain.steps.length);
+    // Defensive: if no actionable steps remain, finish
+    const hasMore = chain.steps.some(s => s.status === 'pending' || s.status === 'active');
+    if (!hasMore) {
+      console.warn('[Chain] task-chain clicked but no pending/active steps — finishing chain');
+      finishChain();
+      return;
+    }
+    showChainMode();
+  } catch (err) {
+    console.error('[Chain] onTaskChainClick error:', err.message, err.stack);
+  }
 }
 
 document.getElementById('task-chain-btn').addEventListener('click', e => { e.stopPropagation(); onTaskChainClick(e); });
@@ -1211,6 +1601,119 @@ function renderTasks() {
   });
 }
 
+// ── Study Minutes & Skip Tickets ───────────────────────────────────────────
+function addStudyMinutes(minutes) {
+  if (!minutes || minutes <= 0) return;
+  data.meta.minutesToday = (data.meta.minutesToday || 0) + minutes;
+  data.meta.totalMinutes = (data.meta.totalMinutes || 0) + minutes;
+  const prevEarned = data.meta.skipTicketsEarned || 0;
+  const newEarned  = Math.floor(data.meta.totalMinutes / 60);
+  const gained = newEarned - prevEarned;
+  if (gained > 0) {
+    data.meta.skipTicketsEarned = newEarned;
+    data.meta.skipTickets = (data.meta.skipTickets || 0) + gained;
+    showToast(`获得 ${gained} 张跳过券！🎫`);
+    checkAchievements();
+  }
+  saveData();
+  renderAll();
+}
+
+// ── Render: Daily Card ─────────────────────────────────────────────────────
+function renderDailyCard() {
+  const el = document.getElementById('daily-card');
+  if (!el) return;
+  const d = new Date();
+  const dateStr = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  const mins  = data.meta.minutesToday || 0;
+  const hours = Math.floor(mins / 60);
+  const remM  = mins % 60;
+  const timeStr = hours > 0 ? `${hours}小时${remM}分` : `${remM}分钟`;
+  const tickets   = data.meta.skipTickets         || 0;
+  const doneTasks = data.meta.tasksCompletedToday || 0;
+  el.innerHTML = `
+    <div class="panel-header">
+      <h2>📅 今日概览</h2>
+      <span class="panel-hint">${dateStr}</span>
+    </div>
+    <div class="daily-card-grid">
+      <div class="daily-card-item">
+        <span class="daily-card-num">${doneTasks}</span>
+        <span class="daily-card-lbl">任务完成</span>
+      </div>
+      <div class="daily-card-item">
+        <span class="daily-card-num">${timeStr}</span>
+        <span class="daily-card-lbl">专注时间</span>
+      </div>
+      <div class="daily-card-item">
+        <span class="daily-card-num">🎫 ${tickets}</span>
+        <span class="daily-card-lbl">跳过券</span>
+      </div>
+    </div>
+  `;
+}
+
+// ── Render: Achievements ───────────────────────────────────────────────────
+function renderAchievements() {
+  const el = document.getElementById('achievements-panel');
+  if (!el) return;
+  const ach = data.meta.achievements || {};
+  const ACHIEVEMENTS = [
+    { key: 'firstTask', icon: '🌱', name: '第一步',      desc: '完成第一个任务' },
+    { key: 'focus60',   icon: '⏱️', name: '专注达人',    desc: '累计专注60分钟' },
+    { key: 'focus300',  icon: '🔥', name: '时间管理大师', desc: '累计专注300分钟' },
+    { key: 'tickets3',  icon: '🎫', name: '节制',        desc: '同时持有3张跳过券' },
+    { key: 'ironWill',  icon: '💪', name: '铁血意志',    desc: '完成10个任务且从未用过跳过券' },
+    { key: 'sprint5',   icon: '🏃', name: '冲刺',        desc: '单日完成5个任务' },
+    { key: 'habit7',    icon: '🗓️', name: '习惯养成',    desc: '累计使用7天' },
+  ];
+  const unlocked = ACHIEVEMENTS.filter(a => ach[a.key]).length;
+  el.innerHTML = `
+    <div class="panel-header">
+      <h2>🏅 成就</h2>
+      <span class="panel-hint">${unlocked}/${ACHIEVEMENTS.length}</span>
+    </div>
+    <div class="achievements-grid">
+      ${ACHIEVEMENTS.map(a => `
+        <div class="achievement-item ${ach[a.key] ? 'unlocked' : 'locked'}">
+          <div class="achievement-tooltip">${esc(a.desc)}</div>
+          <span class="achievement-icon">${a.icon}</span>
+          <span class="achievement-name">${a.name}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function checkAchievements() {
+  if (!data.meta.achievements) return;
+  const ach  = data.meta.achievements;
+  const prev = { ...ach };
+  const total   = data.meta.tasksCompletedTotal || 0;
+  const today   = data.meta.tasksCompletedToday || 0;
+  const mins    = data.meta.totalMinutes        || 0;
+  const tickets = data.meta.skipTickets         || 0;
+  const used    = data.meta.skipTicketsUsed     || 0;
+  const days    = data.meta.activeDays          || 1;
+
+  if (!ach.firstTask && total >= 1)               ach.firstTask = true;
+  if (!ach.focus60   && mins  >= 60)              ach.focus60   = true;
+  if (!ach.focus300  && mins  >= 300)             ach.focus300  = true;
+  if (!ach.tickets3  && tickets >= 3)             ach.tickets3  = true;
+  if (!ach.ironWill  && total >= 10 && used === 0) ach.ironWill = true;
+  if (!ach.sprint5   && today >= 5)               ach.sprint5   = true;
+  if (!ach.habit7    && days  >= 7)               ach.habit7    = true;
+
+  const NAMES = {
+    firstTask: '第一步 🌱', focus60: '专注达人 ⏱️', focus300: '时间管理大师 🔥',
+    tickets3: '节制 🎫', ironWill: '铁血意志 💪', sprint5: '冲刺 🏃', habit7: '习惯养成 🗓️'
+  };
+  Object.keys(ach).forEach(key => {
+    if (!prev[key] && ach[key]) showToast('成就解锁：' + NAMES[key] + ' 🏅');
+  });
+  saveData();
+}
+
 // ── Render: Round Progress ─────────────────────────────────────────────────
 function renderRoundProgress() {
   const el = document.getElementById('round-progress');
@@ -1254,15 +1757,35 @@ function computeStats(tab) {
   const log = (data.meta.activityLog || []).filter(e => {
     const t = new Date(e.timestamp); return t >= start && t < end;
   });
-  const done = log.filter(e => e.action === 'task_done');
+  const done          = log.filter(e => e.action === 'task_done');
+  const procrastEvents = log.filter(e => e.action === 'task_procrastinated');
+  const completed     = done.length;
+  const procrastinated = procrastEvents.length;
+
+  // Start success rate: completed / (completed + procrastinated), formatted as %
+  const total = completed + procrastinated;
+  const successRate = total === 0 ? null : Math.round((completed / total) * 100);
+
+  // Most procrastinated category
+  const catCounts = {};
+  procrastEvents.forEach(e => {
+    const cat = e.category || 'study';
+    catCounts[cat] = (catCounts[cat] || 0) + 1;
+  });
+  const topProcrastCategory = Object.keys(catCounts).length === 0 ? null
+    : Object.keys(catCounts).reduce((a, b) => catCounts[a] >= catCounts[b] ? a : b);
+
   return {
-    completed: done.length,
+    completed,
     estimatedMinutes: done.reduce((s, e) => s + (e.estimatedMinutes || 0), 0),
-    procrastinated: log.filter(e => e.action === 'task_procrastinated').length,
+    procrastinated,
     skipped:        log.filter(e => e.action === 'task_skipped').length,
     rewardsBanked:  log.filter(e => e.action === 'reward_banked').length,
     rewardsUsed:    log.filter(e => e.action === 'reward_used').length,
     chainsCompleted: log.filter(e => e.action === 'chain_completed').length,
+    procrastinationRecoveries: log.filter(e => e.action === 'chain_completed' && e.source === 'procrastination').length,
+    successRate,
+    topProcrastCategory,
     completedTasks: done
   };
 }
@@ -1290,6 +1813,11 @@ function renderStats() {
     '<span>🏦 存奖: ' + s.rewardsBanked + '</span>' +
     '<span>🎉 用奖: ' + s.rewardsUsed + '</span>' +
     '</div>' +
+    '<div class="stats-row2">' +
+    (s.successRate !== null ? '<span>🎯 启动率: ' + s.successRate + '%</span>' : '') +
+    (s.procrastinationRecoveries > 0 ? '<span>💪 拖延恢复: ' + s.procrastinationRecoveries + '</span>' : '') +
+    (s.topProcrastCategory ? '<span>⚠️ 最拖延: ' + (CATEGORY_LABELS[s.topProcrastCategory] || s.topProcrastCategory) + '</span>' : '') +
+    '</div>' +
     (s.completedTasks.length > 0
       ? '<div class="stats-task-list">' +
         s.completedTasks.slice(0, 5).map(e =>
@@ -1311,10 +1839,10 @@ function renderStats() {
 function updateStats() {
   const active    = data.tasks.filter(t => t.activeInCurrentRound && !t.completed).length;
   const completed = data.tasks.filter(t => t.completed).length;
-  const skipCount = data.meta && data.meta.skipCards ? data.meta.skipCards.count : 2;
+  const tickets   = data.meta ? (data.meta.skipTickets || 0) : 0;
   document.getElementById('stats-display').innerHTML =
     `${active} 个任务待完成 · ${completed} 个已完成<br>` +
-    `<span class="skip-cards-stat">🃏 跳过卡本周剩余: ${skipCount}/2</span>`;
+    `<span class="skip-cards-stat">🎫 跳过券: ${tickets} 张</span>`;
 }
 
 // ── Stats helpers ──────────────────────────────────────────────────────────
