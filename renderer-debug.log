@@ -1,4 +1,4 @@
-[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:209) [Chain] Init: active chain = test-chain-001
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:209) [Chain] Init: active chain = active-chain-test
 [warning] (node:electron/js2c/sandbox_bundle:2) %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
   Policy set or a policy with "unsafe-eval" enabled. This exposes users of
   this app to unnecessary security risks.
@@ -7,12 +7,23 @@ For more information and help, consult
 https://electronjs.org/docs/tutorial/security.
 This warning will not show up
 once the app is packaged.
-[info] (:5) [TEST] task-chain-btn found: true hidden: false
-[info] (:7) [TEST] chain-banner classes: chain-banner
-[info] (:9) [TEST] chain-mode-modal classes (before click): modal hidden
+[info] (:22) [INSPECT] chain-banner: display=flex visibility=visible pointerEvents=auto rect=[125,651,371,703] class=chain-banner
+[info] (:23) [INSPECT] task-chain-btn: display=block visibility=visible pointerEvents=auto rect=[293,664,356,690] class=chain-banner-btn
+[info] (:24) [INSPECT] spin-lock-msg: display=block visibility=visible pointerEvents=auto rect=[125,600,371,629] class=spin-lock-msg
+[info] (:25) [INSPECT] chain-mode-modal: display=none visibility=visible pointerEvents=auto rect=[0,0,0,0] class=modal hidden
+[info] (:26) [INSPECT] result-modal: display=none visibility=visible pointerEvents=auto rect=[0,0,0,0] class=modal hidden
+[info] (:27) [INSPECT] split-modal: display=none visibility=visible pointerEvents=auto rect=[0,0,0,0] class=modal hidden
+[info] (:28) [INSPECT] wheel-canvas: display=block visibility=visible pointerEvents=none rect=[53,84,443,474] class=
+[info] (:29) [INSPECT] task-chain-btn: click target at (324,677) = BUTTON#task-chain-btn.chain-banner-btn
+[info] (:30) [INSPECT] viewport: 1084x685
+[info] (:35) [INSPECT] .wheel-controls rect=[125,492,371,703] width=246
 [info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1499) [Chain] banner/btn clicked — checking active chain
-[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1507) [Chain] active chain found: test-chain-001 status: active steps: 2
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1507) [Chain] active chain found: active-chain-test status: active steps: 2
 [info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1197) [Chain] showChainMode called
-[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1222) [Chain] Showing step 0 / 1 : 打开单词本准备
-[info] (:12) [TEST] clicked task-chain-btn
-[info] (:15) [TEST] chain-mode-modal classes (after click): modal
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1222) [Chain] Showing step 0 / 1 : 打开单词本，准备好笔
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1271) [Chain] Step 0 marked completed
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1281) [Chain] Advancing to step 1
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1197) [Chain] showChainMode called
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1222) [Chain] Showing step 1 / 1 : 背完单词并默写一遍
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1271) [Chain] Step 1 marked completed
+[info] (file:///C:/Users/sheng/Desktop/spinner/renderer.js:1291) [Chain] Finishing chain active-chain-test | source: manual

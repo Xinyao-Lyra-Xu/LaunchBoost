@@ -1194,7 +1194,6 @@ function addToSpinnerFromSplit() {
 
 // ── Task Chain ────────────────────────────────────────────────────────────
 function showChainMode() {
-  console.log('[Chain] showChainMode called');
   const chain = getActiveChain();
   if (!chain) {
     console.warn('[Chain] showChainMode: no active chain');
@@ -1362,15 +1361,16 @@ function updateSpinLock() {
   const msg = document.getElementById('spin-lock-msg');
   if (btn) btn.disabled = locked || isSpinning;
   if (msg) {
-    if (!locked) {
+    if (!locked || chainActive) {
+      // Hide when unlocked OR when chain is active (chain-banner already shows it)
       msg.classList.add('hidden');
-    } else if (resultPending && !procrastLock && !chainActive) {
+    } else if (resultPending && !procrastLock) {
       // Task shown in result modal; user hasn't acted yet (covers page-refresh case)
       const t = data.tasks.find(t => String(t.id) === String(data.meta.pendingTaskResultId));
       msg.textContent = '🔒 请先处理「' + (t ? t.title : '当前任务') + '」，才能继续抽取';
       msg.classList.remove('hidden');
-    } else {
-      msg.textContent = '🔒 先完成当前任务链，才能继续下一轮抽取';
+    } else if (procrastLock) {
+      msg.textContent = '🔒 先完成任务拆解，才能继续下一轮抽取';
       msg.classList.remove('hidden');
     }
   }
@@ -1399,6 +1399,20 @@ function updateChainBanner() {
   document.getElementById('chain-banner-title').textContent =
     chain.parentTaskTitle + ' (' + doneCount + '/' + total + ')';
   banner.classList.remove('hidden');
+  // Directly scroll the wheel-section so the banner + button are fully visible.
+  // scrollIntoView with body{overflow:hidden} is unreliable in Electron/Chromium;
+  // explicit scrollTop is the only guaranteed way.
+  setTimeout(() => {
+    const section = banner.closest('.wheel-section');
+    if (!section) return;
+    const sectionRect = section.getBoundingClientRect();
+    const bannerRect  = banner.getBoundingClientRect();
+    const buttonBottom = bannerRect.bottom; // bottom of banner ≈ bottom of button
+    const overflow = buttonBottom - sectionRect.bottom; // how many px below fold
+    if (overflow > 0) {
+      section.scrollTop += overflow + 8; // +8px breathing room
+    }
+  }, 50);
 }
 
 function renderManualInputs(count) {
@@ -1496,26 +1510,20 @@ document.getElementById('chain-skip-btn').addEventListener('click',    () => adv
 document.getElementById('chain-abandon-btn').addEventListener('click', abandonChain);
 
 function onTaskChainClick(e) {
-  console.log('[Chain] banner/btn clicked — checking active chain');
-  try {
-    const chain = getActiveChain();
-    if (!chain) {
-      console.warn('[Chain] task-chain clicked but no active chain — hiding banner');
-      updateChainBanner();
-      return;
-    }
-    console.log('[Chain] active chain found:', chain.id, 'status:', chain.status, 'steps:', chain.steps.length);
-    // Defensive: if no actionable steps remain, finish
-    const hasMore = chain.steps.some(s => s.status === 'pending' || s.status === 'active');
-    if (!hasMore) {
-      console.warn('[Chain] task-chain clicked but no pending/active steps — finishing chain');
-      finishChain();
-      return;
-    }
-    showChainMode();
-  } catch (err) {
-    console.error('[Chain] onTaskChainClick error:', err.message, err.stack);
+  const chain = getActiveChain();
+  if (!chain) {
+    console.warn('[Chain] task-chain clicked but no active chain — hiding banner');
+    updateChainBanner();
+    return;
   }
+  // Defensive: if no actionable steps remain, finish
+  const hasMore = chain.steps.some(s => s.status === 'pending' || s.status === 'active');
+  if (!hasMore) {
+    console.warn('[Chain] task-chain clicked but no pending/active steps — finishing chain');
+    finishChain();
+    return;
+  }
+  showChainMode();
 }
 
 document.getElementById('task-chain-btn').addEventListener('click', e => { e.stopPropagation(); onTaskChainClick(e); });
