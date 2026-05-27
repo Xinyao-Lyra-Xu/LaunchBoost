@@ -13,6 +13,32 @@ function darken(hex: string, amount: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
+/**
+ * Truncates text to fit within maxWidth using a binary-search approach.
+ * Returns empty string if even a single character + ellipsis doesn't fit.
+ */
+function truncateText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  const ellipsis = "…";
+  const ellipsisW = ctx.measureText(ellipsis).width;
+  if (ellipsisW >= maxWidth) return "";
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(text.slice(0, mid)).width + ellipsisW <= maxWidth) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo > 0 ? text.slice(0, lo) + ellipsis : "";
+}
+
 function drawText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -20,7 +46,9 @@ function drawText(
   isReward: boolean,
   arcAngle: number
 ) {
-  const MIN_ARC = Math.PI / 9;
+  // Skip segments too narrow to render any readable text.
+  if (arcAngle < Math.PI / 18) return;
+
   ctx.save();
   ctx.translate(CENTER, CENTER);
   ctx.rotate(midAngle);
@@ -32,23 +60,32 @@ function drawText(
   ctx.shadowColor = "rgba(0,0,0,0.6)";
   ctx.shadowBlur = 3;
 
-  if (arcAngle < MIN_ARC) {
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("·", flip ? -(RADIUS * 0.62) : RADIUS * 0.62, 4);
+  // Scale font size with available arc so text never overflows its segment.
+  const fontSize =
+    arcAngle < Math.PI / 9  ? 9  :
+    arcAngle < Math.PI / 6  ? 11 :
+    arcAngle < Math.PI / 4  ? 12 : 13;
+  ctx.font = `bold ${fontSize}px "Microsoft YaHei", Arial, sans-serif`;
+
+  // Radial text spans from inner hub edge to near the outer rim.
+  const INNER_R = 32;
+  const OUTER_R = RADIUS - 8;
+  const maxW = OUTER_R - INNER_R;
+
+  const label = (isReward ? "⭐ " : "") + text;
+  const displayText = truncateText(ctx, label, maxW);
+  if (!displayText) {
+    ctx.restore();
+    return;
+  }
+
+  if (flip) {
+    ctx.rotate(Math.PI);
+    ctx.textAlign = "right";
+    ctx.fillText(displayText, -(INNER_R + 2), 4);
   } else {
-    const fontSize = arcAngle > Math.PI / 4 ? 13 : 12;
-    ctx.font = `bold ${fontSize}px "Microsoft YaHei", Arial, sans-serif`;
-    const maxW = RADIUS * 0.62;
-    const label = (isReward ? "⭐ " : "") + text;
-    if (flip) {
-      ctx.rotate(Math.PI);
-      ctx.textAlign = "right";
-      ctx.fillText(label, -28, 5, maxW);
-    } else {
-      ctx.textAlign = "left";
-      ctx.fillText(label, 28, 5, maxW);
-    }
+    ctx.textAlign = "left";
+    ctx.fillText(displayText, INNER_R + 2, 4);
   }
   ctx.restore();
 }
@@ -125,6 +162,8 @@ interface SpinnerWheelProps {
   targetRotation: number;
   statsLine: string;
   skipCardsLine: string;
+  /** When set, spin is blocked and this message is shown below the button. */
+  blockReason?: string;
   onSpin(): void;
   onSpinComplete(normalizedRotation: number): void;
 }
@@ -136,6 +175,7 @@ export function SpinnerWheel({
   targetRotation,
   statsLine,
   skipCardsLine,
+  blockReason,
   onSpin,
   onSpinComplete,
 }: SpinnerWheelProps) {
@@ -209,6 +249,11 @@ export function SpinnerWheel({
           <span className="spin-icon">🎯</span>
           <span>开始转动！</span>
         </button>
+        {blockReason && (
+          <div className="spin-block-reason" id="spin-block-reason">
+            ⚠️ {blockReason}
+          </div>
+        )}
         <div className="stats" id="stats-display">
           {statsLine}
           <br />

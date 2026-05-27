@@ -28,6 +28,24 @@ export class SpinWheelUseCase {
       this.roundStateRepo.get(),
     ]);
 
+    // Block spin while the current active task has not been resolved.
+    if (roundState.activeTaskId !== null) {
+      throw new Error("请先完成当前任务后再转动。");
+    }
+
+    // Block spin while a task is awaiting mandatory split.
+    if (roundState.pendingSplitTaskId) {
+      throw new Error("请先完成任务拆解后再转动。");
+    }
+
+    // Block spin while any subtask from a previous split is still active.
+    const pendingSubtasks = tasks.filter(
+      (t) => t.active && t.parentTaskId != null
+    );
+    if (pendingSubtasks.length > 0) {
+      throw new Error("请先完成所有子任务后再转动。");
+    }
+
     const wheelItems = calculateWheelItems({ tasks, rewards, roundState });
     if (wheelItems.length === 0) {
       throw new Error("No active items on the wheel.");

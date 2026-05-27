@@ -1198,6 +1198,40 @@ body {
 /* ── Generic hidden utility ── */
 .hidden { display: none; }
 
+/* ── Timer mode selector (TaskEditor form) ── */
+.timer-mode-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timer-mode-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.18s ease;
+  user-select: none;
+}
+
+.timer-mode-opt:has(input:checked) {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.1);
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+.timer-mode-opt input[type="radio"] {
+  accent-color: #667eea;
+  cursor: pointer;
+  width: 13px;
+  height: 13px;
+}
+
 /* ── Timer widget ── */
 .modal-timer {
   margin: 14px 0 18px;

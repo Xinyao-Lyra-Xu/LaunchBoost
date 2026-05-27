@@ -1,5 +1,5 @@
 import type { TaskRepository } from "../../application/ports/TaskRepository";
-import type { Task, TaskFrequency } from "../../domain/entities/Task";
+import type { Task, TaskFrequency, TimerMode } from "../../domain/entities/Task";
 import type { TaskCategory } from "../../domain/valueObjects/TaskCategory";
 import type { TaskDifficulty } from "../../domain/valueObjects/TaskDifficulty";
 import type { PersistedTask } from "../../electron";
@@ -25,6 +25,8 @@ function toTask(p: PersistedTask, roundCompletedIds: string[]): Task {
     procrastinatedCount: p.procrastinatedCount || 0,
     skippedCount: p.skippedCount || 0,
     active: p.activeInCurrentRound !== false && !isCompleted,
+    parentTaskId: p.parentTaskId,
+    timerMode: (p.timerMode === "countdown" ? "countdown" : "stopwatch") as TimerMode,
   };
 }
 
@@ -43,6 +45,8 @@ function toPersistedTask(t: Task): PersistedTask {
     procrastinatedCount: t.procrastinatedCount,
     skippedCount: t.skippedCount,
     activeInCurrentRound: t.active,
+    parentTaskId: t.parentTaskId,
+    timerMode: t.timerMode,
   };
 }
 

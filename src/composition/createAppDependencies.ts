@@ -56,7 +56,7 @@ export function createAppDependencies(): AppDependencies {
   );
   const bankRewardUseCase = new BankRewardUseCase(rewardRepo, statsRepo);
   const useRewardUseCase = new UseRewardUseCase(rewardRepo);
-  const splitTaskUseCase = new SplitTaskUseCase(taskRepo, splitterGateway);
+  const splitTaskUseCase = new SplitTaskUseCase(taskRepo, splitterGateway, roundStateRepo);
   const resetRoundUseCase = new ResetRoundUseCase(taskRepo, roundStateRepo);
 
   // Controllers
