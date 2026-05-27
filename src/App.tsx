@@ -25,16 +25,39 @@ export default function App() {
   ).length;
   const completedTasks = app.roundState.completedTaskIdsThisRound.length;
 
+  const pendingSplitTaskId = app.roundState.pendingSplitTaskId ?? null;
+  const activeTaskId = app.roundState.activeTaskId ?? null;
+  const spinBlockReason = activeTaskId
+    ? "请先完成当前任务后再转动"
+    : pendingSplitTaskId
+    ? "请先完成任务拆解后再转动"
+    : app.hasBlockingSubtasks
+    ? "请先完成所有子任务后再转动（勾选任务列表中的子任务）"
+    : undefined;
+  const canSpin =
+    app.wheelSegments.length > 0 &&
+    !app.isSpinning &&
+    !activeTaskId &&
+    !pendingSplitTaskId &&
+    !app.hasBlockingSubtasks;
+
+  // Skip-card stats line (shown below the spin button)
+  const skipCardProgressLine =
+    app.skipCardsLeft >= 3
+      ? "🃏 跳过卷: 3/3（已满）"
+      : `🃏 跳过卷: ${app.skipCardsLeft}/3  再完成 ${3 - app.skipCardProgress} 个任务得 1 张`;
+
   return (
     <div className="app-container">
       {/* ── Left: Wheel ── */}
       <SpinnerWheel
         segments={app.wheelSegments}
         isSpinning={app.isSpinning}
-        canSpin={app.wheelSegments.length > 0 && !app.isSpinning}
+        canSpin={canSpin}
         targetRotation={app.targetRotation}
         statsLine={`${activeTasks} 个任务待完成 · ${completedTasks} 个已完成`}
-        skipCardsLine={`🃏 跳过卡本周剩余: ${app.skipCardsLeft}/2`}
+        skipCardsLine={skipCardProgressLine}
+        blockReason={spinBlockReason}
         onSpin={app.spin}
         onSpinComplete={app.onSpinComplete}
       />
@@ -191,6 +214,8 @@ export default function App() {
         tasks={app.tasks}
         rewards={app.rewards}
         skipCardsLeft={app.skipCardsLeft}
+        skipCardProgress={app.skipCardProgress}
+        consecutiveSkips={app.consecutiveSkips}
         onCompleteTask={app.completeTask}
         onProcrastinateTask={app.procrastinateTask}
         onSkipTask={app.skipTask}

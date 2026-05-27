@@ -2,30 +2,20 @@ import type { RoundStateRepository } from "../../application/ports/RoundStateRep
 import type { RoundState } from "../../domain/entities/RoundState";
 import { dataStore } from "./ElectronIpcDataStore";
 
-const SKIP_CARDS_PER_WEEK = 2;
-
-function getWeekKey(): string {
-  const d = new Date();
-  const jan1 = new Date(d.getFullYear(), 0, 1);
-  const week = Math.ceil(
-    ((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7
-  );
-  return `${d.getFullYear()}-W${week}`;
-}
+/** Skip cards a brand-new user starts with. */
+const SKIP_CARD_INITIAL = 1;
 
 export class ElectronIpcRoundStateRepository implements RoundStateRepository {
   async get(): Promise<RoundState> {
     const data = await dataStore.get();
     const meta = data.meta ?? {};
-    const skipCards = meta.skipCards;
-    const currentWeek = getWeekKey();
+    const sc = meta.skipCards;
 
-    let skipCardsLeft = SKIP_CARDS_PER_WEEK;
-    let lastResetDate = currentWeek;
-    if (skipCards && skipCards.weekKey === currentWeek) {
-      skipCardsLeft = skipCards.count;
-      lastResetDate = skipCards.weekKey;
-    }
+    // Gracefully handle both missing data and the old { count, weekKey } format.
+    const skipCardsLeft    = sc?.count            ?? SKIP_CARD_INITIAL;
+    const skipCardProgress = sc?.progress         ?? 0;
+    const consecutiveSkips = sc?.consecutiveSkips ?? 0;
+    const skipCardProgressDate = sc?.progressDate ?? "";
 
     // Derive completed and skipped IDs from task flags
     const completedIds = data.tasks
@@ -41,26 +31,34 @@ export class ElectronIpcRoundStateRepository implements RoundStateRepository {
       skippedTaskIdsThisRound: skippedIds,
       procrastinationRecoveryMode: false,
       skipCardsLeft,
-      lastSkipCardResetDate: lastResetDate,
+      skipCardProgress,
+      consecutiveSkips,
+      skipCardProgressDate,
+      pendingSplitTaskId: meta.pendingSplitTaskId ?? null,
+      activeTaskId: meta.activeTaskId ?? null,
     };
   }
 
   async save(state: RoundState): Promise<void> {
     const data = await dataStore.get();
 
-    // Persist skip cards
     data.meta = data.meta ?? {};
     data.meta.skipCards = {
-      count: state.skipCardsLeft,
-      weekKey: state.lastSkipCardResetDate || getWeekKey(),
+      count:          state.skipCardsLeft,
+      progress:       state.skipCardProgress,
+      consecutiveSkips: state.consecutiveSkips,
+      progressDate:   state.skipCardProgressDate,
     };
+
+    data.meta.pendingSplitTaskId = state.pendingSplitTaskId;
+    data.meta.activeTaskId       = state.activeTaskId;
 
     // Sync task flags from round state
     data.tasks.forEach((t) => {
       const id = String(t.id);
       const isCompleted = state.completedTaskIdsThisRound.includes(id);
-      const isSkipped = state.skippedTaskIdsThisRound.includes(id);
-      t.completed = isCompleted;
+      const isSkipped   = state.skippedTaskIdsThisRound.includes(id);
+      t.completed          = isCompleted;
       t.activeInCurrentRound = !isCompleted && !isSkipped;
     });
 

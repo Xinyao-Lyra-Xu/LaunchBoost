@@ -10,7 +10,6 @@ export interface ProcrastinateTaskOutput {
   task: Task;
   roundState: RoundState;
   stats: AppStats;
-  shouldOfferSplit: boolean;
 }
 
 export class ProcrastinateTaskUseCase {
@@ -32,6 +31,8 @@ export class ProcrastinateTaskUseCase {
 
     task.procrastinatedCount += 1;
     roundState.procrastinationRecoveryMode = true;
+    // Every procrastinated task must be split before the next spin.
+    roundState.pendingSplitTaskId = taskId;
 
     const updatedStats = bumpStats(
       stats,
@@ -43,9 +44,6 @@ export class ProcrastinateTaskUseCase {
     await this.statsRepo.save(updatedStats);
     await this.roundStateRepo.save(roundState);
 
-    const shouldOfferSplit =
-      task.difficulty === "medium" || task.difficulty === "hard";
-
-    return { task, roundState, stats: updatedStats, shouldOfferSplit };
+    return { task, roundState, stats: updatedStats };
   }
 }

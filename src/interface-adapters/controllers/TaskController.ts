@@ -7,7 +7,7 @@ import type { ResetRoundUseCase } from "../../application/useCases/ResetRoundUse
 import type { Task } from "../../domain/entities/Task";
 import type { TaskCategory } from "../../domain/valueObjects/TaskCategory";
 import type { TaskDifficulty } from "../../domain/valueObjects/TaskDifficulty";
-import type { TaskFrequency } from "../../domain/entities/Task";
+import type { TaskFrequency, TimerMode } from "../../domain/entities/Task";
 
 export interface TaskEditFields {
   title: string;
@@ -17,6 +17,7 @@ export interface TaskEditFields {
   baseWeight: number;
   repeatable: boolean;
   frequency: TaskFrequency;
+  timerMode: TimerMode;
 }
 
 export class TaskController {
@@ -87,6 +88,7 @@ export class TaskController {
       procrastinatedCount: 0,
       skippedCount: 0,
       active: true,
+      timerMode: "stopwatch" as TimerMode,
     }));
     await this.taskRepo.addMany(newTasks);
     return newTasks;

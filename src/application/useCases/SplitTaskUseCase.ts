@@ -1,4 +1,5 @@
 import type { TaskRepository } from "../ports/TaskRepository";
+import type { RoundStateRepository } from "../ports/RoundStateRepository";
 import type { TaskSplitterGateway, SubtaskData } from "../ports/TaskSplitterGateway";
 import type { Task } from "../../domain/entities/Task";
 
@@ -9,7 +10,8 @@ export interface SplitTaskOutput {
 export class SplitTaskUseCase {
   constructor(
     private taskRepo: TaskRepository,
-    private splitterGateway: TaskSplitterGateway
+    private splitterGateway: TaskSplitterGateway,
+    private roundStateRepo: RoundStateRepository
   ) {}
 
   async execute(taskId: string): Promise<SplitTaskOutput> {
@@ -31,12 +33,24 @@ export class SplitTaskUseCase {
     return { subtasks: result.subtasks };
   }
 
-  /** Applies accepted subtasks: deactivates original, creates children. */
+  /** Applies accepted subtasks: deactivates original, creates children, clears pending split. */
   async confirmSplit(
     originalTaskId: string,
     subtasks: SubtaskData[]
   ): Promise<Task[]> {
-    const tasks = await this.taskRepo.getAll();
+    if (!subtasks || subtasks.length === 0) {
+      throw new Error("至少需要 1 个子任务才能确认拆解。");
+    }
+    const emptyTitles = subtasks.some((st) => !st.title.trim());
+    if (emptyTitles) {
+      throw new Error("子任务名称不能为空。");
+    }
+
+    const [tasks, roundState] = await Promise.all([
+      this.taskRepo.getAll(),
+      this.roundStateRepo.get(),
+    ]);
+
     const original = tasks.find((t) => t.id === originalTaskId);
     if (!original) throw new Error(`Task ${originalTaskId} not found`);
 
@@ -55,10 +69,20 @@ export class SplitTaskUseCase {
       procrastinatedCount: 0,
       skippedCount: 0,
       active: true,
+      parentTaskId: originalTaskId,
+      timerMode: original.timerMode,
     }));
 
-    await this.taskRepo.update(original);
-    await this.taskRepo.addMany(newTasks);
+    // Clear the mandatory-split gate now that split is confirmed.
+    // Also clear the active task lock — blocking responsibility shifts to hasBlockingSubtasks.
+    roundState.pendingSplitTaskId = null;
+    roundState.activeTaskId = null;
+
+    await Promise.all([
+      this.taskRepo.update(original),
+      this.taskRepo.addMany(newTasks),
+      this.roundStateRepo.save(roundState),
+    ]);
 
     return newTasks;
   }

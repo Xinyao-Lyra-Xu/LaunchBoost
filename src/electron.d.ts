@@ -26,6 +26,8 @@ export interface PersistedTask {
   procrastinatedCount: number;
   skippedCount: number;
   activeInCurrentRound: boolean;
+  parentTaskId?: string;
+  timerMode?: string;
 }
 
 export interface PersistedReward {
@@ -38,7 +40,14 @@ export interface PersistedReward {
 }
 
 export interface PersistedMeta {
-  skipCards?: { count: number; weekKey: string };
+  skipCards?: {
+    count: number;
+    progress: number;
+    consecutiveSkips: number;
+    progressDate: string;
+  };
+  pendingSplitTaskId?: string | null;
+  activeTaskId?: string | null;
   stats?: {
     todayKey?: string;
     completedToday?: number;

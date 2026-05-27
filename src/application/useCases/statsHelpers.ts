@@ -1,6 +1,6 @@
 import type { AppStats } from "../ports/StatsRepository";
 
-function getTodayKey(): string {
+export function getTodayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }

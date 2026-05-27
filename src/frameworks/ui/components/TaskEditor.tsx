@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Task, TaskFrequency } from "../../../domain/entities/Task";
+import type { Task, TaskFrequency, TimerMode } from "../../../domain/entities/Task";
 import type { TaskCategory } from "../../../domain/valueObjects/TaskCategory";
 import type { TaskDifficulty } from "../../../domain/valueObjects/TaskDifficulty";
 import type { TaskEditFields } from "../../../interface-adapters/controllers/TaskController";
@@ -14,10 +14,12 @@ interface TaskEditorProps {
 export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
   const titleRef = useRef<HTMLInputElement>(null);
   const [repeatable, setRepeatable] = useState(true);
+  const [timerMode, setTimerMode] = useState<TimerMode>("stopwatch");
 
   useEffect(() => {
     if (isOpen) {
       setRepeatable(task ? task.repeatable !== false : true);
+      setTimerMode(task?.timerMode ?? "stopwatch");
       setTimeout(() => titleRef.current?.focus(), 60);
     }
   }, [isOpen, task]);
@@ -38,6 +40,7 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
       baseWeight: Math.min(5, Math.max(1, parseInt(data.get("weight") as string) || 2)),
       repeatable: rep,
       frequency: rep ? ((data.get("frequency") as TaskFrequency) ?? "custom") : "once",
+      timerMode,
     };
     onSave(fields);
   }
@@ -111,6 +114,31 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
                 </select>
               </div>
             )}
+            <div className="form-row full">
+              <label>计时模式</label>
+              <div className="timer-mode-options">
+                <label className="timer-mode-opt">
+                  <input
+                    type="radio"
+                    name="timerMode"
+                    value="stopwatch"
+                    checked={timerMode === "stopwatch"}
+                    onChange={() => setTimerMode("stopwatch")}
+                  />
+                  ⏱ 正计时
+                </label>
+                <label className="timer-mode-opt">
+                  <input
+                    type="radio"
+                    name="timerMode"
+                    value="countdown"
+                    checked={timerMode === "countdown"}
+                    onChange={() => setTimerMode("countdown")}
+                  />
+                  ⏳ 倒计时（从预计时间倒数）
+                </label>
+              </div>
+            </div>
           </div>
         </form>
         <div className="modal-actions">

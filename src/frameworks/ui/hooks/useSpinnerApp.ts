@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createAppDependencies } from "../../../composition/createAppDependencies";
 import {
   calculateWheelItems,
+  type WheelItem,
 } from "../../../domain/services/SpinnerProbabilityService";
 import {
   toWheelDisplayItems,
@@ -43,6 +44,10 @@ export interface SpinnerAppHook {
   currentWinnerId: string | null;
   currentWinnerType: "task" | "reward" | null;
   skipCardsLeft: number;
+  skipCardProgress: number;
+  consecutiveSkips: number;
+  // Blocking state
+  hasBlockingSubtasks: boolean;
   // Modals
   taskEditOpen: boolean;
   taskBeingEdited: Task | null;
@@ -89,12 +94,64 @@ export interface SpinnerAppHook {
 
 const deps = createAppDependencies();
 
+/** Fisher-Yates shuffle — returns a new array. */
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/** Rotates array left by `offset` positions. */
+function rotateLeft<T>(arr: T[], offset: number): T[] {
+  const n = arr.length;
+  if (n === 0) return [];
+  const o = ((offset % n) + n) % n;
+  return [...arr.slice(o), ...arr.slice(0, o)];
+}
+
+/**
+ * Arranges wheel items so large and small segments alternate.
+ *
+ * Algorithm:
+ *  1. Sort all items by weight descending.
+ *  2. Interleave from both ends: [biggest, smallest, 2nd-biggest, 2nd-smallest, …]
+ *     This guarantees no two similarly-sized (small) segments are adjacent.
+ *  3. Randomly rotate the starting position so each round begins at a different item.
+ *
+ * The same array is used for both rendering and spin-angle calculation,
+ * so the pointer always lands on the visually correct segment.
+ */
+function arrangeWheelItems(items: WheelItem[]): WheelItem[] {
+  if (items.length <= 2) return shuffleArray(items);
+
+  const sorted = [...items].sort((a, b) => b.weight - a.weight);
+  const interleaved: WheelItem[] = [];
+  let lo = 0;
+  let hi = sorted.length - 1;
+  let fromFront = true;
+  while (lo <= hi) {
+    interleaved.push(fromFront ? sorted[lo++] : sorted[hi--]);
+    fromFront = !fromFront;
+  }
+
+  // Random starting position so the wheel looks different each round.
+  const offset = Math.floor(Math.random() * interleaved.length);
+  return rotateLeft(interleaved, offset);
+}
+
 const EMPTY_ROUND_STATE: RoundState = {
   completedTaskIdsThisRound: [],
   skippedTaskIdsThisRound: [],
   procrastinationRecoveryMode: false,
-  skipCardsLeft: 2,
-  lastSkipCardResetDate: "",
+  skipCardsLeft: 1,
+  skipCardProgress: 0,
+  skipCardProgressDate: "",
+  consecutiveSkips: 0,
+  pendingSplitTaskId: null,
+  activeTaskId: null,
 };
 
 export function useSpinnerApp(): SpinnerAppHook {
@@ -102,6 +159,9 @@ export function useSpinnerApp(): SpinnerAppHook {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [roundState, setRoundState] = useState<RoundState>(EMPTY_ROUND_STATE);
   const [stats, setStats] = useState<AppStats | null>(null);
+
+  // Shuffled display order — re-randomised whenever the set of wheel items changes.
+  const [shuffledWheelItems, setShuffledWheelItems] = useState<WheelItem[]>([]);
 
   const [isSpinning, setIsSpinning] = useState(false);
   const [targetRotation, setTargetRotation] = useState(0);
@@ -139,6 +199,28 @@ export function useSpinnerApp(): SpinnerAppHook {
       setRewards(loadedRewards);
       setRoundState(loadedRoundState);
       setStats(loadedStats);
+
+      // Re-open the mandatory split modal if a split was interrupted (e.g. page reload).
+      if (loadedRoundState.pendingSplitTaskId) {
+        const taskToSplit = loadedTasks.find(
+          (t) => t.id === loadedRoundState.pendingSplitTaskId
+        );
+        if (taskToSplit) {
+          setTaskBeingSplit(taskToSplit);
+          setSplitState("choice");
+          setAiSubtasks(null);
+          setSplitOpen(true);
+        } else {
+          // Task was deleted while split was pending — clear the stale gate.
+          const cleared = { ...loadedRoundState, pendingSplitTaskId: null, activeTaskId: null };
+          await deps.roundStateRepo.save(cleared);
+          setRoundState(cleared);
+        }
+      } else if (loadedRoundState.activeTaskId) {
+        // A task was spun but not yet resolved — restore the result modal.
+        setCurrentWinnerId(loadedRoundState.activeTaskId);
+        setCurrentWinnerType("task");
+      }
     }
     load();
   }, []);
@@ -149,9 +231,17 @@ export function useSpinnerApp(): SpinnerAppHook {
     [tasks, rewards, roundState]
   );
 
+  // Re-arrange the display order whenever the wheel's item set changes.
+  // arrangeWheelItems interleaves large and small segments so they never cluster,
+  // then randomly rotates the starting position for variety each round.
+  // Both rendering and spin-rotation calculation use this same array.
+  useEffect(() => {
+    setShuffledWheelItems(arrangeWheelItems(wheelItems));
+  }, [wheelItems]);
+
   const wheelSegments = useMemo(
-    () => toWheelDisplayItems(wheelItems),
-    [wheelItems]
+    () => toWheelDisplayItems(shuffledWheelItems),
+    [shuffledWheelItems]
   );
 
   const taskListItems = useMemo(
@@ -170,6 +260,12 @@ export function useSpinnerApp(): SpinnerAppHook {
         ? toStatsViewModel({ tasks, rewards, roundState, stats })
         : null,
     [tasks, rewards, roundState, stats]
+  );
+
+  // True when any subtask from a prior split is still unfinished.
+  const hasBlockingSubtasks = useMemo(
+    () => tasks.some((t) => t.active && t.parentTaskId != null),
+    [tasks]
   );
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -197,19 +293,19 @@ export function useSpinnerApp(): SpinnerAppHook {
 
   // ── Spin ──────────────────────────────────────────────────────────────────
   const spin = useCallback(() => {
-    if (isSpinning || wheelItems.length === 0) return;
+    if (isSpinning || shuffledWheelItems.length === 0) return;
 
-    // Spin use case just picks the winner; we also need wheel items here for geometry
     deps.spinController.spin().then((output) => {
       const winner = output.winner;
       winnerIdRef.current = winner.id;
       winnerTypeRef.current = winner.type;
 
-      // Compute rotation to land pointer on winner
-      const totalWeight = wheelItems.reduce((s, i) => s + i.weight, 0);
+      // Compute rotation using the shuffled display order so the pointer
+      // lands on the segment that is visually rendered for the winner.
+      const totalWeight = shuffledWheelItems.reduce((s, i) => s + i.weight, 0);
       let segStart = 0;
       let centerDeg = 0;
-      for (const item of wheelItems) {
+      for (const item of shuffledWheelItems) {
         const arcDeg = (item.weight / totalWeight) * 360;
         if (item.id === winner.id) {
           centerDeg = segStart + arcDeg / 2;
@@ -225,16 +321,30 @@ export function useSpinnerApp(): SpinnerAppHook {
 
       setIsSpinning(true);
       setTargetRotation(newRotation);
+    }).catch((e: unknown) => {
+      showToast((e as Error).message || "无法转动");
     });
-  }, [isSpinning, wheelItems, totalRotation]);
+  }, [isSpinning, shuffledWheelItems, totalRotation, showToast]);
 
   const onSpinComplete = useCallback((normalizedRotation: number) => {
     setTotalRotation(normalizedRotation);
     setIsSpinning(false);
     setCurrentWinnerId(winnerIdRef.current);
     setCurrentWinnerType(winnerTypeRef.current);
-    // Turn off procrastination recovery after a new spin
-    setRoundState((prev) => ({ ...prev, procrastinationRecoveryMode: false }));
+
+    const type = winnerTypeRef.current;
+    const id = winnerIdRef.current;
+    // Persist activeTaskId for task winners and clear procrastination recovery.
+    (async () => {
+      const rs = await deps.roundStateRepo.get();
+      const updated: RoundState = {
+        ...rs,
+        procrastinationRecoveryMode: false,
+        activeTaskId: type === "task" && id ? id : rs.activeTaskId,
+      };
+      await deps.roundStateRepo.save(updated);
+      setRoundState(updated);
+    })();
   }, []);
 
   // ── Task result actions ───────────────────────────────────────────────────
@@ -262,16 +372,13 @@ export function useSpinnerApp(): SpinnerAppHook {
     setCurrentWinnerId(null);
     setCurrentWinnerType(null);
 
-    if (out.shouldOfferSplit) {
-      setTaskBeingSplit(out.task);
-      setSplitState("choice");
-      setAiSubtasks(null);
-      setSplitErrorMsg("");
-      setSplitOpen(true);
-    } else {
-      showToast("已记录拖延，下次简单任务概率更高 💪");
-    }
-  }, [currentWinnerId, showToast]);
+    // Split is now mandatory for every procrastinated task.
+    setTaskBeingSplit(out.task);
+    setSplitState("choice");
+    setAiSubtasks(null);
+    setSplitErrorMsg("");
+    setSplitOpen(true);
+  }, [currentWinnerId]);
 
   const skipTask = useCallback(async () => {
     if (!currentWinnerId) return;
@@ -285,7 +392,7 @@ export function useSpinnerApp(): SpinnerAppHook {
       setCurrentWinnerId(null);
       setCurrentWinnerType(null);
       showToast(
-        `任务已跳过！还剩 ${out.roundState.skipCardsLeft} 张跳过卡 🃏`
+        `任务已跳过！跳过卷剩余 ${out.roundState.skipCardsLeft}/3 🃏`
       );
     } catch (e: unknown) {
       showToast((e as Error).message || "跳过失败");
@@ -427,11 +534,12 @@ export function useSpinnerApp(): SpinnerAppHook {
       await reloadAll();
       setSplitOpen(false);
       setTaskBeingSplit(null);
-      showToast(`已拆分为 ${newTasks.length} 个子任务 ✂️`);
+      showToast(`已拆解为 ${newTasks.length} 个子任务，请逐一完成后再转盘 ✂️`);
     },
     [taskBeingSplit, reloadAll, showToast]
   );
 
+  // Goes back to the choice screen — split is mandatory, so no full cancel.
   const rejectAiSplit = useCallback(() => {
     setSplitState("choice");
     setAiSubtasks(null);
@@ -439,10 +547,7 @@ export function useSpinnerApp(): SpinnerAppHook {
 
   const confirmManualSplit = useCallback(
     async (names: string[]) => {
-      if (!taskBeingSplit || names.length === 0) {
-        cancelSplit();
-        return;
-      }
+      if (!taskBeingSplit || names.length === 0) return;
       const subtasks = names.map((title) => ({ title, estimatedMinutes: 15 }));
       await acceptAiSplit(subtasks);
     },
@@ -450,11 +555,11 @@ export function useSpinnerApp(): SpinnerAppHook {
     [taskBeingSplit, acceptAiSplit]
   );
 
+  // Split is mandatory — "cancel" only goes back to the choice screen.
   const cancelSplit = useCallback(() => {
-    setSplitOpen(false);
-    setTaskBeingSplit(null);
-    showToast("已记录拖延，下次简单任务概率更高 💪");
-  }, [showToast]);
+    setSplitState("choice");
+    setAiSubtasks(null);
+  }, []);
 
   // ── Bulk Import ───────────────────────────────────────────────────────────
   const openBulkImport = useCallback(() => setBulkImportOpen(true), []);
@@ -505,6 +610,9 @@ export function useSpinnerApp(): SpinnerAppHook {
     currentWinnerId,
     currentWinnerType,
     skipCardsLeft: roundState.skipCardsLeft,
+    skipCardProgress: roundState.skipCardProgress,
+    consecutiveSkips: roundState.consecutiveSkips,
+    hasBlockingSubtasks,
     taskEditOpen,
     taskBeingEdited,
     rewardEditOpen,
