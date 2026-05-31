@@ -135,9 +135,12 @@ function migrateChain(chain) {
   if (!chain.source)                    chain.source      = 'manual';
   if (chain.completedAt  === undefined) chain.completedAt = null;
   if (chain.currentStepIndex === undefined) {
-    const lastDoneIdx = chain.steps.reduce((max, s, i) =>
-      (s.status !== 'pending' ? i : max), -1);
-    chain.currentStepIndex = Math.max(0, Math.min(lastDoneIdx + 1, chain.steps.length - 1));
+    // Find the first active step; fall back to first pending step.
+    // The old reduce used `status !== 'pending'` which incorrectly treated
+    // 'active' as "already done" and skipped to the next step.
+    let idx = chain.steps.findIndex(s => s.status === 'active');
+    if (idx === -1) idx = chain.steps.findIndex(s => s.status === 'pending');
+    chain.currentStepIndex = Math.max(0, idx === -1 ? chain.steps.length - 1 : idx);
   }
   chain.steps = chain.steps.map(s => ({
     ...s,
@@ -220,6 +223,20 @@ async function init() {
         updateSpinLock();
       }
     }, 100);
+  }
+
+  // Restore pending result: if a spin result was never acted on (e.g. app closed before user chose done/procrastinate/skip)
+  if (data.meta.pendingTaskResultId && !data.meta.lockedByTaskId && !currentChain) {
+    const pendingTask = data.tasks.find(t => String(t.id) === String(data.meta.pendingTaskResultId));
+    setTimeout(() => {
+      if (pendingTask && !pendingTask.completed) {
+        showResult({ type: 'task', item: pendingTask });
+      } else {
+        data.meta.pendingTaskResultId = null;
+        saveData();
+        updateSpinLock();
+      }
+    }, 150);
   }
 
   nextId = Math.max(
@@ -971,6 +988,7 @@ function closeChainModal() {
   const mins = flushChainTimer();
   if (mins > 0) addStudyMinutes(mins);
   document.getElementById('chain-mode-modal').classList.add('hidden');
+  updateChainBanner();
 }
 
 document.getElementById('chain-timer-btn').addEventListener('click', toggleChainTimer);
@@ -1213,7 +1231,10 @@ function showChainMode() {
     chain.currentStepIndex = nextIdx;
     step = chain.steps[nextIdx];
   }
-  if (step.status === 'pending') step.status = 'active';
+  if (step.status === 'pending') {
+    step.status = 'active';
+    saveData();
+  }
 
   const done  = chain.steps.filter(s => s.status === 'completed' || s.status === 'skipped').length;
   const total = chain.steps.length;
@@ -1394,6 +1415,8 @@ function updateChainBanner() {
       finishChain();
       return;
     }
+    const fixedIdx = chain.steps.findIndex(s => s.status === 'pending' || s.status === 'active');
+    if (fixedIdx !== -1) chain.currentStepIndex = fixedIdx;
   }
 
   document.getElementById('chain-banner-title').textContent =

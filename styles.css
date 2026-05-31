@@ -1512,36 +1512,15 @@ body {
 .chain-mode-content {
   min-width: 360px;
   max-width: 460px;
-  text-align: left;
-  padding: 32px 40px;
-}
-
-.chain-mode-parent {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 16px;
-}
-
-.chain-mode-parent-label {
-  font-size: 10px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  font-weight: 700;
-}
-
-.chain-mode-parent-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #a78bfa;
+  text-align: center;
+  padding: 28px 40px 32px;
 }
 
 .chain-mode-progress {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
 }
 
 .chain-progress-bar-bg {
@@ -1566,46 +1545,70 @@ body {
   flex-shrink: 0;
 }
 
-.chain-step-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: 14px;
-  padding: 18px 20px;
-  margin-bottom: 18px;
+.chain-mode-parent {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 14px;
 }
 
-.chain-step-title {
-  font-size: 18px;
+.chain-mode-parent-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+
+.chain-mode-parent-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a78bfa;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* large emoji like timer-view */
+.chain-view-emoji {
+  font-size: 40px;
+  text-align: center;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+/* step title like timer-view-task */
+.chain-view-task {
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 6px;
+  text-align: center;
+  margin-bottom: 4px;
   line-height: 1.4;
+  overflow-wrap: break-word;
 }
 
 .chain-step-mins {
   font-size: 12px;
   color: var(--text-secondary);
+  text-align: center;
+  margin-bottom: 18px;
 }
 
-/* ── Chain inline timer ── */
-.chain-timer-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 14px;
-}
-
+/* big timer like timer-view-display */
 .chain-timer-display {
-  font-size: 28px;
+  font-size: 56px;
   font-weight: 700;
+  font-family: 'Courier New', monospace;
+  color: #a78bfa;
+  letter-spacing: 3px;
+  text-align: center;
+  margin-bottom: 16px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-  letter-spacing: 2px;
-  font-family: "Courier New", monospace;
 }
 
 .chain-timer-display.running {
@@ -1613,7 +1616,9 @@ body {
 }
 
 .chain-timer-btn {
-  padding: 8px 18px;
+  display: block;
+  margin: 0 auto 20px;
+  padding: 8px 24px;
   font-size: 13px;
   font-weight: 600;
   color: #fff;
