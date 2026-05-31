@@ -347,12 +347,6 @@
     <div class="modal-backdrop" id="chain-mode-backdrop"></div>
     <div class="modal-content chain-mode-content">
 
-      <!-- 父任务 -->
-      <div class="chain-mode-parent">
-        <span class="chain-mode-parent-label">父任务</span>
-        <span id="chain-parent-title" class="chain-mode-parent-title"></span>
-      </div>
-
       <!-- 进度条 -->
       <div class="chain-mode-progress">
         <div class="chain-progress-bar-bg">
@@ -361,17 +355,24 @@
         <span class="chain-progress-text" id="chain-progress">步骤 1 / 1</span>
       </div>
 
-      <!-- 当前步骤卡片 -->
-      <div class="chain-step-card">
-        <div class="chain-step-title" id="chain-step-title"></div>
-        <div class="chain-step-mins" id="chain-step-mins"></div>
+      <!-- 父任务小字 -->
+      <div class="chain-mode-parent">
+        <span class="chain-mode-parent-label">父任务</span>
+        <span id="chain-parent-title" class="chain-mode-parent-title"></span>
       </div>
 
-      <!-- 内嵌计时器 -->
-      <div class="chain-timer-section">
-        <div class="chain-timer-display" id="chain-timer-display">00:00</div>
-        <button class="chain-timer-btn" id="chain-timer-btn">⏱ 开始计时</button>
-      </div>
+      <!-- 大 emoji -->
+      <div class="chain-view-emoji">⏱️</div>
+
+      <!-- 当前步骤标题 -->
+      <div class="chain-view-task" id="chain-step-title"></div>
+      <div class="chain-step-mins" id="chain-step-mins"></div>
+
+      <!-- 大号计时器 -->
+      <div class="chain-timer-display" id="chain-timer-display">00:00</div>
+
+      <!-- 计时按钮 -->
+      <button class="chain-timer-btn" id="chain-timer-btn">⏱ 开始计时</button>
 
       <!-- 鼓励文案 -->
       <div class="chain-encourage" id="chain-encourage"></div>
