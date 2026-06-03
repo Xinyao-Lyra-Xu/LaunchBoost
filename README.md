@@ -8,10 +8,10 @@ LaunchBoost is a motivation-powered spinner app designed to overcome startup res
 - **React + TypeScript** application under `src/`, organized in Clean Architecture layers
   (`domain` → `application` → `interface-adapters` → `frameworks`)
 - **Vite** for bundling, **Vitest** for tests
+- **electron-builder** for Windows installers
 
-> **Migration note:** the app is mid-migration. The shipping UI is still the legacy
-> `index.html` + `renderer.js` monolith; the `src/` React rewrite is fully tested but
-> not yet wired into `index.html`. Completing that switch is the next planned phase.
+`index.html` is a minimal React mount point that loads the Vite bundle
+(`dist/renderer.bundle.js`); the Electron main process loads it via `win.loadFile`.
 
 ## Development
 
@@ -41,6 +41,29 @@ Auto-fixers:
 npm run lint:fix      # eslint --fix
 npm run format        # prettier --write
 ```
+
+## Packaging (Windows)
+
+Installers are built with electron-builder (config lives in the `build` field of
+`package.json`). Targets: an NSIS installer and a portable `.exe`.
+
+```bash
+npm run pack:dir   # build an unpacked app under release/ (fast smoke test)
+npm run dist       # build the NSIS installer + portable exe under release/
+```
+
+Releasing is automated: pushing a `v*` tag runs `.github/workflows/release.yml`
+on a Windows runner, which builds the installers and uploads them to the matching
+GitHub Release.
+
+```bash
+# bump "version" in package.json first, then:
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+> **App icon:** none is set yet, so builds use the default Electron icon. To add
+> one, drop a 256×256+ `icon.ico` into `assets/` (the configured buildResources dir).
 
 ## Configuration
 

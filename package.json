@@ -2,6 +2,7 @@
   "name": "learning-wheel",
   "version": "1.0.0",
   "description": "学习激励转盘",
+  "author": "LaunchBoost",
   "main": "main.js",
   "scripts": {
     "build": "vite build",
@@ -14,7 +15,46 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "pack:dir": "npm run build && electron-builder --win --dir",
+    "dist": "npm run build && electron-builder --win",
+    "release": "npm run build && electron-builder --win --publish always"
+  },
+  "build": {
+    "appId": "com.launchboost.app",
+    "productName": "LaunchBoost",
+    "copyright": "Copyright © LaunchBoost",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "styles.css",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "学习激励转盘"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "publish": {
+      "provider": "github"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -26,20 +66,20 @@
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
-    "electron": "^31.0.0",
+    "electron": "^42.3.2",
+    "electron-builder": "^26.8.1",
     "eslint": "^10.4.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
     "playwright-core": "^1.60.0",
     "prettier": "^3.8.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.1",
     "vite": "^8.0.14",
     "vitest": "^4.1.7"
   },
-  "dependencies": {
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
-  }
+  "dependencies": {}
 }

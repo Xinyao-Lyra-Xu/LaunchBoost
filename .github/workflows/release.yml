@@ -1,0 +1,36 @@
+name: Release
+
+# Build Windows installers and publish them to a GitHub Release whenever a
+# version tag is pushed (e.g. `git tag v1.1.0 && git push origin v1.1.0`).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    name: Build & publish Windows installers
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Quality gate
+        run: npm run check
+
+      - name: Build & publish installers
+        run: npm run release
+        env:
+          # electron-builder uploads artifacts to the GitHub Release for the tag.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
