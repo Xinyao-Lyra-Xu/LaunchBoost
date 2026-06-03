@@ -58,7 +58,12 @@ export interface PersistedMeta {
     totalProcrastinated?: number;
     totalSkipped?: number;
     totalRewardsBanked?: number;
+    totalMinutes?: number;
+    activeDays?: number;
+    lastActiveDate?: string;
   };
+  /** Map of unlocked achievement ids. */
+  achievements?: Record<string, boolean>;
 }
 
 export interface PersistedData {

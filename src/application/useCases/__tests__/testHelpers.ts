@@ -58,6 +58,9 @@ export function makeStats(overrides: Partial<AppStats> = {}): AppStats {
     totalProcrastinated: 0,
     totalSkipped: 0,
     totalRewardsBanked: 0,
+    totalMinutes: 0,
+    activeDays: 0,
+    lastActiveDate: "",
     todayKey: "2026-5-25",
     ...overrides,
   };

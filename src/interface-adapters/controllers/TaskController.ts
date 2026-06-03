@@ -30,8 +30,8 @@ export class TaskController {
     private resetRoundUseCase: ResetRoundUseCase,
   ) {}
 
-  async completeTask(taskId: string) {
-    return this.completeTaskUseCase.execute(taskId);
+  async completeTask(taskId: string, focusMinutes = 0) {
+    return this.completeTaskUseCase.execute(taskId, focusMinutes);
   }
 
   async procrastinateTask(taskId: string) {

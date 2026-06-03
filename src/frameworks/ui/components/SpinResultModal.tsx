@@ -19,7 +19,7 @@ interface SpinResultModalProps {
   skipCardsLeft: number;
   skipCardProgress: number;
   consecutiveSkips: number;
-  onCompleteTask(): void;
+  onCompleteTask(focusMinutes: number): void;
   onProcrastinateTask(): void;
   onSkipTask(): void;
   onUseRewardNow(): void;
@@ -203,7 +203,10 @@ export function SpinResultModal({
 
         {/* ── Actions ── */}
         <div className="modal-actions" id="modal-actions">
-          <button className="btn-complete" onClick={onCompleteTask}>
+          <button
+            className="btn-complete"
+            onClick={() => onCompleteTask(Math.max(0, Math.round(timer.elapsed / 60)))}
+          >
             完成 ✓
           </button>
           <button className="btn-procrastinate" onClick={onProcrastinateTask}>

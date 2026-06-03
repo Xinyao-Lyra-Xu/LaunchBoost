@@ -7,6 +7,7 @@ import { RewardBank } from "./frameworks/ui/components/RewardBank";
 import { SplitTaskModal } from "./frameworks/ui/components/SplitTaskModal";
 import { BulkImportModal } from "./frameworks/ui/components/BulkImportModal";
 import { RoundProgressPanel, StatsPanel } from "./frameworks/ui/components/StatsPanel";
+import { AchievementsPanel } from "./frameworks/ui/components/AchievementsPanel";
 
 const TASK_COLORS = [
   "#60A5FA",
@@ -162,6 +163,9 @@ export default function App() {
 
         {/* Stats */}
         {app.statsVM && <StatsPanel vm={app.statsVM} />}
+
+        {/* Achievements */}
+        {app.achievementsVM && <AchievementsPanel vm={app.achievementsVM} />}
 
         {/* Rules */}
         <div className="panel">

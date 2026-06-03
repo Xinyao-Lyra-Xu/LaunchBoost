@@ -15,6 +15,9 @@ const DEFAULT_STATS: AppStats = {
   totalProcrastinated: 0,
   totalSkipped: 0,
   totalRewardsBanked: 0,
+  totalMinutes: 0,
+  activeDays: 0,
+  lastActiveDate: "",
   todayKey: getTodayKey(),
 };
 
@@ -28,6 +31,9 @@ export class ElectronIpcStatsRepository implements StatsRepository {
       totalProcrastinated: s.totalProcrastinated ?? 0,
       totalSkipped: s.totalSkipped ?? 0,
       totalRewardsBanked: s.totalRewardsBanked ?? 0,
+      totalMinutes: s.totalMinutes ?? 0,
+      activeDays: s.activeDays ?? 0,
+      lastActiveDate: s.lastActiveDate ?? "",
       todayKey,
       completedToday: 0,
       procrastinatedToday: 0,
@@ -59,6 +65,9 @@ export class ElectronIpcStatsRepository implements StatsRepository {
       totalProcrastinated: stats.totalProcrastinated,
       totalSkipped: stats.totalSkipped,
       totalRewardsBanked: stats.totalRewardsBanked,
+      totalMinutes: stats.totalMinutes,
+      activeDays: stats.activeDays,
+      lastActiveDate: stats.lastActiveDate,
     };
     await dataStore.save(data);
   }

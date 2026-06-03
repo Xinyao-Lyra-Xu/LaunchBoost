@@ -18,6 +18,7 @@ import type { TaskEditFields } from "../../../interface-adapters/controllers/Tas
 import type { TaskListItem } from "../../../interface-adapters/presenters/TaskListPresenter";
 import type { RewardBankViewModel } from "../../../interface-adapters/viewModels/RewardBankViewModel";
 import type { StatsViewModel } from "../../../interface-adapters/viewModels/StatsViewModel";
+import type { AchievementsViewModel } from "../../../interface-adapters/viewModels/AchievementsViewModel";
 
 export type SplitModalState = "choice" | "loading" | "results" | "error" | "manual";
 
@@ -31,6 +32,7 @@ export interface SpinnerAppHook {
   taskListItems: TaskListItem[];
   rewardBankVM: RewardBankViewModel;
   statsVM: StatsViewModel | null;
+  achievementsVM: AchievementsViewModel | null;
   // Spin state
   isSpinning: boolean;
   targetRotation: number;
@@ -56,7 +58,7 @@ export interface SpinnerAppHook {
   // Handlers
   spin(): void;
   onSpinComplete(normalizedRotation: number): void;
-  completeTask(): void;
+  completeTask(focusMinutes?: number): void;
   procrastinateTask(): void;
   skipTask(): void;
   useRewardNow(): void;
@@ -152,6 +154,7 @@ export function useSpinnerApp(): SpinnerAppHook {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [roundState, setRoundState] = useState<RoundState>(EMPTY_ROUND_STATE);
   const [stats, setStats] = useState<AppStats | null>(null);
+  const [achievementsVM, setAchievementsVM] = useState<AchievementsViewModel | null>(null);
 
   // Shuffled display order — re-randomised whenever the set of wheel items changes.
   const [shuffledWheelItems, setShuffledWheelItems] = useState<WheelItem[]>([]);
@@ -191,6 +194,10 @@ export function useSpinnerApp(): SpinnerAppHook {
       setRewards(loadedRewards);
       setRoundState(loadedRoundState);
       setStats(loadedStats);
+
+      // Record today as an active day and surface current achievement progress.
+      const ach = await deps.achievementController.init();
+      setAchievementsVM(ach.vm);
 
       // Re-open the mandatory split modal if a split was interrupted (e.g. page reload).
       if (loadedRoundState.pendingSplitTaskId) {
@@ -257,6 +264,15 @@ export function useSpinnerApp(): SpinnerAppHook {
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2100);
   }, []);
+
+  // ── Achievements ──────────────────────────────────────────────────────────
+  // Re-evaluate after any action that can satisfy an unlock condition, toasting
+  // newly earned achievements.
+  const refreshAchievements = useCallback(async () => {
+    const { vm, newlyUnlocked } = await deps.achievementController.refresh();
+    setAchievementsVM(vm);
+    newlyUnlocked.forEach((label) => showToast("成就解锁：" + label + " 🏅"));
+  }, [showToast]);
 
   // ── Reload helpers ────────────────────────────────────────────────────────
   const reloadAll = useCallback(async () => {
@@ -332,16 +348,20 @@ export function useSpinnerApp(): SpinnerAppHook {
   }, []);
 
   // ── Task result actions ───────────────────────────────────────────────────
-  const completeTask = useCallback(async () => {
-    if (!currentWinnerId) return;
-    const out = await deps.taskController.completeTask(currentWinnerId);
-    setTasks((prev) => prev.map((t) => (t.id === out.task.id ? out.task : t)));
-    setRoundState(out.roundState);
-    setStats(out.stats);
-    setCurrentWinnerId(null);
-    setCurrentWinnerType(null);
-    showToast("任务完成！继续加油 🎉");
-  }, [currentWinnerId, showToast]);
+  const completeTask = useCallback(
+    async (focusMinutes = 0) => {
+      if (!currentWinnerId) return;
+      const out = await deps.taskController.completeTask(currentWinnerId, focusMinutes);
+      setTasks((prev) => prev.map((t) => (t.id === out.task.id ? out.task : t)));
+      setRoundState(out.roundState);
+      setStats(out.stats);
+      setCurrentWinnerId(null);
+      setCurrentWinnerType(null);
+      showToast("任务完成！继续加油 🎉");
+      void refreshAchievements();
+    },
+    [currentWinnerId, showToast, refreshAchievements],
+  );
 
   const procrastinateTask = useCallback(async () => {
     if (!currentWinnerId) return;
@@ -370,10 +390,11 @@ export function useSpinnerApp(): SpinnerAppHook {
       setCurrentWinnerId(null);
       setCurrentWinnerType(null);
       showToast(`任务已跳过！跳过卷剩余 ${out.roundState.skipCardsLeft}/3 🃏`);
+      void refreshAchievements();
     } catch (e: unknown) {
       showToast((e as Error).message || "跳过失败");
     }
-  }, [currentWinnerId, showToast]);
+  }, [currentWinnerId, showToast, refreshAchievements]);
 
   // ── Reward result actions ─────────────────────────────────────────────────
   const useRewardNow = useCallback(() => {
@@ -390,7 +411,8 @@ export function useSpinnerApp(): SpinnerAppHook {
     setCurrentWinnerId(null);
     setCurrentWinnerType(null);
     showToast("奖励已存入奖励库！🏦");
-  }, [currentWinnerId, showToast]);
+    void refreshAchievements();
+  }, [currentWinnerId, showToast, refreshAchievements]);
 
   const useBankedReward = useCallback(
     async (rewardId: string) => {
@@ -564,6 +586,7 @@ export function useSpinnerApp(): SpinnerAppHook {
     taskListItems,
     rewardBankVM,
     statsVM,
+    achievementsVM,
     isSpinning,
     targetRotation,
     currentWinnerId,
