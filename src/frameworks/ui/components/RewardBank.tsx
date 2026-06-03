@@ -25,9 +25,7 @@ export function RewardBank({ vm, onEditReward, onUseBanked }: RewardBankProps) {
             <div className="reward-dot" style={{ background: r.color }} />
             <span className="reward-name">{r.title}</span>
             <span className="reward-dur">{r.durationMinutes}分</span>
-            {r.bankedCount > 0 && (
-              <span className="reward-banked">×{r.bankedCount}</span>
-            )}
+            {r.bankedCount > 0 && <span className="reward-banked">×{r.bankedCount}</span>}
             {r.bankedCount > 0 && (
               <button
                 className="btn-use-banked"

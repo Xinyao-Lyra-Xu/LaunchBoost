@@ -18,13 +18,7 @@ interface SplitTaskModalProps {
 
 // ── Manual input panel ────────────────────────────────────────────────────────
 
-function ManualInputs({
-  onConfirm,
-  onBack,
-}: {
-  onConfirm(names: string[]): void;
-  onBack(): void;
-}) {
+function ManualInputs({ onConfirm, onBack }: { onConfirm(names: string[]): void; onBack(): void }) {
   const [items, setItems] = useState<string[]>(["", ""]);
   const [error, setError] = useState("");
 
@@ -69,11 +63,7 @@ function ManualInputs({
               onChange={(e) => updateItem(i, e.target.value)}
             />
             {items.length > 1 && (
-              <button
-                className="icon-btn delete"
-                onClick={() => removeItem(i)}
-                title="删除"
-              >
+              <button className="icon-btn delete" onClick={() => removeItem(i)} title="删除">
                 ✕
               </button>
             )}
@@ -161,17 +151,11 @@ function AiResults({
               value={st.estimatedMinutes}
               min={1}
               max={120}
-              onChange={(e) =>
-                update(i, "estimatedMinutes", parseInt(e.target.value) || 15)
-              }
+              onChange={(e) => update(i, "estimatedMinutes", parseInt(e.target.value) || 15)}
             />
             <span className="ai-subtask-unit">分</span>
             {items.length > 1 && (
-              <button
-                className="icon-btn delete"
-                onClick={() => remove(i)}
-                title="删除"
-              >
+              <button className="icon-btn delete" onClick={() => remove(i)} title="删除">
                 ✕
               </button>
             )}
@@ -227,18 +211,10 @@ export function SplitTaskModal({
         {splitState === "choice" && (
           <div id="split-state-choice">
             <div className="split-choice-btns">
-              <button
-                id="split-ai-btn"
-                className="btn-ai-split"
-                onClick={onRequestAi}
-              >
+              <button id="split-ai-btn" className="btn-ai-split" onClick={onRequestAi}>
                 ✨ AI 智能拆解
               </button>
-              <button
-                id="split-manual-btn"
-                className="btn-secondary"
-                onClick={onRejectAi}
-              >
+              <button id="split-manual-btn" className="btn-secondary" onClick={onRejectAi}>
                 ✏️ 手动拆解
               </button>
             </div>
@@ -255,11 +231,7 @@ export function SplitTaskModal({
         )}
 
         {splitState === "results" && aiSubtasks && (
-          <AiResults
-            subtasks={aiSubtasks}
-            onAccept={onAcceptAi}
-            onReject={onRejectAi}
-          />
+          <AiResults subtasks={aiSubtasks} onAccept={onAcceptAi} onReject={onRejectAi} />
         )}
 
         {splitState === "error" && (
@@ -268,18 +240,10 @@ export function SplitTaskModal({
               {errorMsg}
             </p>
             <div className="modal-actions">
-              <button
-                id="split-err-manual-btn"
-                className="btn-secondary"
-                onClick={onRejectAi}
-              >
+              <button id="split-err-manual-btn" className="btn-secondary" onClick={onRejectAi}>
                 手动拆解
               </button>
-              <button
-                id="split-retry-btn"
-                className="btn-primary"
-                onClick={onRequestAi}
-              >
+              <button id="split-retry-btn" className="btn-primary" onClick={onRequestAi}>
                 重试
               </button>
             </div>

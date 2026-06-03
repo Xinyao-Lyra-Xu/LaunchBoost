@@ -4,9 +4,7 @@ import {
   calculateWheelItems,
   type WheelItem,
 } from "../../../domain/services/SpinnerProbabilityService";
-import {
-  toWheelDisplayItems,
-} from "../../../interface-adapters/presenters/SpinnerPresenter";
+import { toWheelDisplayItems } from "../../../interface-adapters/presenters/SpinnerPresenter";
 import { toStatsViewModel } from "../../../interface-adapters/presenters/StatsPresenter";
 import { toRewardBankViewModel } from "../../../interface-adapters/presenters/RewardBankPresenter";
 import { toTaskListItems } from "../../../interface-adapters/presenters/TaskListPresenter";
@@ -20,13 +18,9 @@ import type { TaskEditFields } from "../../../interface-adapters/controllers/Tas
 import type { TaskListItem } from "../../../interface-adapters/presenters/TaskListPresenter";
 import type { RewardBankViewModel } from "../../../interface-adapters/viewModels/RewardBankViewModel";
 import type { StatsViewModel } from "../../../interface-adapters/viewModels/StatsViewModel";
+import type { AchievementsViewModel } from "../../../interface-adapters/viewModels/AchievementsViewModel";
 
-export type SplitModalState =
-  | "choice"
-  | "loading"
-  | "results"
-  | "error"
-  | "manual";
+export type SplitModalState = "choice" | "loading" | "results" | "error" | "manual";
 
 export interface SpinnerAppHook {
   // Data
@@ -38,6 +32,7 @@ export interface SpinnerAppHook {
   taskListItems: TaskListItem[];
   rewardBankVM: RewardBankViewModel;
   statsVM: StatsViewModel | null;
+  achievementsVM: AchievementsViewModel | null;
   // Spin state
   isSpinning: boolean;
   targetRotation: number;
@@ -63,7 +58,7 @@ export interface SpinnerAppHook {
   // Handlers
   spin(): void;
   onSpinComplete(normalizedRotation: number): void;
-  completeTask(): void;
+  completeTask(focusMinutes?: number): void;
   procrastinateTask(): void;
   skipTask(): void;
   useRewardNow(): void;
@@ -86,7 +81,7 @@ export interface SpinnerAppHook {
   openBulkImport(): void;
   closeBulkImport(): void;
   confirmBulkImport(
-    lines: Array<{ title: string; category: string; difficulty: string; estimatedMinutes: number }>
+    lines: Array<{ title: string; category: string; difficulty: string; estimatedMinutes: number }>,
   ): void;
   toggleRules(): void;
   showToast(msg: string): void;
@@ -159,9 +154,13 @@ export function useSpinnerApp(): SpinnerAppHook {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [roundState, setRoundState] = useState<RoundState>(EMPTY_ROUND_STATE);
   const [stats, setStats] = useState<AppStats | null>(null);
+  const [achievementsVM, setAchievementsVM] = useState<AchievementsViewModel | null>(null);
 
   // Shuffled display order — re-randomised whenever the set of wheel items changes.
   const [shuffledWheelItems, setShuffledWheelItems] = useState<WheelItem[]>([]);
+  // Tracks the wheelItems reference last arranged, so we re-shuffle on change
+  // without a setState-in-effect cascade. null forces a shuffle on first render.
+  const [arrangedFrom, setArrangedFrom] = useState<WheelItem[] | null>(null);
 
   const [isSpinning, setIsSpinning] = useState(false);
   const [targetRotation, setTargetRotation] = useState(0);
@@ -188,23 +187,24 @@ export function useSpinnerApp(): SpinnerAppHook {
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
-      const [loadedTasks, loadedRewards, loadedRoundState, loadedStats] =
-        await Promise.all([
-          deps.taskRepo.getAll(),
-          deps.rewardRepo.getAll(),
-          deps.roundStateRepo.get(),
-          deps.statsRepo.get(),
-        ]);
+      const [loadedTasks, loadedRewards, loadedRoundState, loadedStats] = await Promise.all([
+        deps.taskRepo.getAll(),
+        deps.rewardRepo.getAll(),
+        deps.roundStateRepo.get(),
+        deps.statsRepo.get(),
+      ]);
       setTasks(loadedTasks);
       setRewards(loadedRewards);
       setRoundState(loadedRoundState);
       setStats(loadedStats);
 
+      // Record today as an active day and surface current achievement progress.
+      const ach = await deps.achievementController.init();
+      setAchievementsVM(ach.vm);
+
       // Re-open the mandatory split modal if a split was interrupted (e.g. page reload).
       if (loadedRoundState.pendingSplitTaskId) {
-        const taskToSplit = loadedTasks.find(
-          (t) => t.id === loadedRoundState.pendingSplitTaskId
-        );
+        const taskToSplit = loadedTasks.find((t) => t.id === loadedRoundState.pendingSplitTaskId);
         if (taskToSplit) {
           setTaskBeingSplit(taskToSplit);
           setSplitState("choice");
@@ -228,44 +228,37 @@ export function useSpinnerApp(): SpinnerAppHook {
   // ── Derived view models ───────────────────────────────────────────────────
   const wheelItems = useMemo(
     () => calculateWheelItems({ tasks, rewards, roundState }),
-    [tasks, rewards, roundState]
+    [tasks, rewards, roundState],
   );
 
   // Re-arrange the display order whenever the wheel's item set changes.
   // arrangeWheelItems interleaves large and small segments so they never cluster,
   // then randomly rotates the starting position for variety each round.
   // Both rendering and spin-rotation calculation use this same array.
-  useEffect(() => {
+  // Done during render (not in an effect) to avoid a cascading re-render.
+  if (wheelItems !== arrangedFrom) {
+    setArrangedFrom(wheelItems);
     setShuffledWheelItems(arrangeWheelItems(wheelItems));
-  }, [wheelItems]);
+  }
 
   const wheelSegments = useMemo(
     () => toWheelDisplayItems(shuffledWheelItems),
-    [shuffledWheelItems]
+    [shuffledWheelItems],
   );
 
-  const taskListItems = useMemo(
-    () => toTaskListItems(tasks, roundState),
-    [tasks, roundState]
-  );
+  const taskListItems = useMemo(() => toTaskListItems(tasks, roundState), [tasks, roundState]);
 
-  const rewardBankVM = useMemo(
-    () => toRewardBankViewModel(rewards),
-    [rewards]
-  );
+  const rewardBankVM = useMemo(() => toRewardBankViewModel(rewards), [rewards]);
 
   const statsVM = useMemo(
-    () =>
-      stats
-        ? toStatsViewModel({ tasks, rewards, roundState, stats })
-        : null,
-    [tasks, rewards, roundState, stats]
+    () => (stats ? toStatsViewModel({ tasks, rewards, roundState, stats }) : null),
+    [tasks, rewards, roundState, stats],
   );
 
   // True when any subtask from a prior split is still unfinished.
   const hasBlockingSubtasks = useMemo(
     () => tasks.some((t) => t.active && t.parentTaskId != null),
-    [tasks]
+    [tasks],
   );
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -276,6 +269,15 @@ export function useSpinnerApp(): SpinnerAppHook {
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2100);
   }, []);
+
+  // ── Achievements ──────────────────────────────────────────────────────────
+  // Re-evaluate after any action that can satisfy an unlock condition, toasting
+  // newly earned achievements.
+  const refreshAchievements = useCallback(async () => {
+    const { vm, newlyUnlocked } = await deps.achievementController.refresh();
+    setAchievementsVM(vm);
+    newlyUnlocked.forEach((label) => showToast("成就解锁：" + label + " 🏅"));
+  }, [showToast]);
 
   // ── Reload helpers ────────────────────────────────────────────────────────
   const reloadAll = useCallback(async () => {
@@ -295,35 +297,38 @@ export function useSpinnerApp(): SpinnerAppHook {
   const spin = useCallback(() => {
     if (isSpinning || shuffledWheelItems.length === 0) return;
 
-    deps.spinController.spin().then((output) => {
-      const winner = output.winner;
-      winnerIdRef.current = winner.id;
-      winnerTypeRef.current = winner.type;
+    deps.spinController
+      .spin()
+      .then((output) => {
+        const winner = output.winner;
+        winnerIdRef.current = winner.id;
+        winnerTypeRef.current = winner.type;
 
-      // Compute rotation using the shuffled display order so the pointer
-      // lands on the segment that is visually rendered for the winner.
-      const totalWeight = shuffledWheelItems.reduce((s, i) => s + i.weight, 0);
-      let segStart = 0;
-      let centerDeg = 0;
-      for (const item of shuffledWheelItems) {
-        const arcDeg = (item.weight / totalWeight) * 360;
-        if (item.id === winner.id) {
-          centerDeg = segStart + arcDeg / 2;
-          break;
+        // Compute rotation using the shuffled display order so the pointer
+        // lands on the segment that is visually rendered for the winner.
+        const totalWeight = shuffledWheelItems.reduce((s, i) => s + i.weight, 0);
+        let segStart = 0;
+        let centerDeg = 0;
+        for (const item of shuffledWheelItems) {
+          const arcDeg = (item.weight / totalWeight) * 360;
+          if (item.id === winner.id) {
+            centerDeg = segStart + arcDeg / 2;
+            break;
+          }
+          segStart += arcDeg;
         }
-        segStart += arcDeg;
-      }
-      const targetMod = (360 - centerDeg) % 360;
-      const currentMod = totalRotation % 360;
-      const delta = (targetMod - currentMod + 360) % 360;
-      const fullSpins = (5 + Math.floor(Math.random() * 4)) * 360;
-      const newRotation = totalRotation + fullSpins + delta;
+        const targetMod = (360 - centerDeg) % 360;
+        const currentMod = totalRotation % 360;
+        const delta = (targetMod - currentMod + 360) % 360;
+        const fullSpins = (5 + Math.floor(Math.random() * 4)) * 360;
+        const newRotation = totalRotation + fullSpins + delta;
 
-      setIsSpinning(true);
-      setTargetRotation(newRotation);
-    }).catch((e: unknown) => {
-      showToast((e as Error).message || "无法转动");
-    });
+        setIsSpinning(true);
+        setTargetRotation(newRotation);
+      })
+      .catch((e: unknown) => {
+        showToast((e as Error).message || "无法转动");
+      });
   }, [isSpinning, shuffledWheelItems, totalRotation, showToast]);
 
   const onSpinComplete = useCallback((normalizedRotation: number) => {
@@ -348,25 +353,25 @@ export function useSpinnerApp(): SpinnerAppHook {
   }, []);
 
   // ── Task result actions ───────────────────────────────────────────────────
-  const completeTask = useCallback(async () => {
-    if (!currentWinnerId) return;
-    const out = await deps.taskController.completeTask(currentWinnerId);
-    setTasks((prev) =>
-      prev.map((t) => (t.id === out.task.id ? out.task : t))
-    );
-    setRoundState(out.roundState);
-    setStats(out.stats);
-    setCurrentWinnerId(null);
-    setCurrentWinnerType(null);
-    showToast("任务完成！继续加油 🎉");
-  }, [currentWinnerId, showToast]);
+  const completeTask = useCallback(
+    async (focusMinutes = 0) => {
+      if (!currentWinnerId) return;
+      const out = await deps.taskController.completeTask(currentWinnerId, focusMinutes);
+      setTasks((prev) => prev.map((t) => (t.id === out.task.id ? out.task : t)));
+      setRoundState(out.roundState);
+      setStats(out.stats);
+      setCurrentWinnerId(null);
+      setCurrentWinnerType(null);
+      showToast("任务完成！继续加油 🎉");
+      void refreshAchievements();
+    },
+    [currentWinnerId, showToast, refreshAchievements],
+  );
 
   const procrastinateTask = useCallback(async () => {
     if (!currentWinnerId) return;
     const out = await deps.taskController.procrastinateTask(currentWinnerId);
-    setTasks((prev) =>
-      prev.map((t) => (t.id === out.task.id ? out.task : t))
-    );
+    setTasks((prev) => prev.map((t) => (t.id === out.task.id ? out.task : t)));
     setRoundState(out.roundState);
     setStats(out.stats);
     setCurrentWinnerId(null);
@@ -384,20 +389,17 @@ export function useSpinnerApp(): SpinnerAppHook {
     if (!currentWinnerId) return;
     try {
       const out = await deps.taskController.skipTask(currentWinnerId);
-      setTasks((prev) =>
-        prev.map((t) => (t.id === out.task.id ? out.task : t))
-      );
+      setTasks((prev) => prev.map((t) => (t.id === out.task.id ? out.task : t)));
       setRoundState(out.roundState);
       setStats(out.stats);
       setCurrentWinnerId(null);
       setCurrentWinnerType(null);
-      showToast(
-        `任务已跳过！跳过卷剩余 ${out.roundState.skipCardsLeft}/3 🃏`
-      );
+      showToast(`任务已跳过！跳过卷剩余 ${out.roundState.skipCardsLeft}/3 🃏`);
+      void refreshAchievements();
     } catch (e: unknown) {
       showToast((e as Error).message || "跳过失败");
     }
-  }, [currentWinnerId, showToast]);
+  }, [currentWinnerId, showToast, refreshAchievements]);
 
   // ── Reward result actions ─────────────────────────────────────────────────
   const useRewardNow = useCallback(() => {
@@ -409,42 +411,36 @@ export function useSpinnerApp(): SpinnerAppHook {
   const bankReward = useCallback(async () => {
     if (!currentWinnerId) return;
     const out = await deps.rewardController.bankReward(currentWinnerId);
-    setRewards((prev) =>
-      prev.map((r) => (r.id === out.reward.id ? out.reward : r))
-    );
+    setRewards((prev) => prev.map((r) => (r.id === out.reward.id ? out.reward : r)));
     setStats(out.stats);
     setCurrentWinnerId(null);
     setCurrentWinnerType(null);
     showToast("奖励已存入奖励库！🏦");
-  }, [currentWinnerId, showToast]);
+    void refreshAchievements();
+  }, [currentWinnerId, showToast, refreshAchievements]);
 
   const useBankedReward = useCallback(
     async (rewardId: string) => {
       const out = await deps.rewardController.useReward(rewardId, true);
-      setRewards((prev) =>
-        prev.map((r) => (r.id === out.reward.id ? out.reward : r))
-      );
+      setRewards((prev) => prev.map((r) => (r.id === out.reward.id ? out.reward : r)));
       showToast(`享受 "${out.reward.title}" 吧！🎉`);
     },
-    [showToast]
+    [showToast],
   );
 
   // ── Task CRUD ─────────────────────────────────────────────────────────────
   const openTaskEdit = useCallback(
     (taskId: string | null) => {
-      setTaskBeingEdited(taskId ? tasks.find((t) => t.id === taskId) ?? null : null);
+      setTaskBeingEdited(taskId ? (tasks.find((t) => t.id === taskId) ?? null) : null);
       setTaskEditOpen(true);
     },
-    [tasks]
+    [tasks],
   );
   const closeTaskEdit = useCallback(() => setTaskEditOpen(false), []);
 
   const saveTaskEdit = useCallback(
     async (fields: TaskEditFields) => {
-      const saved = await deps.taskController.saveTask(
-        taskBeingEdited?.id ?? null,
-        fields
-      );
+      const saved = await deps.taskController.saveTask(taskBeingEdited?.id ?? null, fields);
       setTasks((prev) => {
         const idx = prev.findIndex((t) => t.id === saved.id);
         if (idx !== -1) {
@@ -456,7 +452,7 @@ export function useSpinnerApp(): SpinnerAppHook {
       });
       setTaskEditOpen(false);
     },
-    [taskBeingEdited]
+    [taskBeingEdited],
   );
 
   const deleteTask = useCallback(async (taskId: string) => {
@@ -464,15 +460,12 @@ export function useSpinnerApp(): SpinnerAppHook {
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
   }, []);
 
-  const toggleTask = useCallback(
-    async (taskId: string) => {
-      const updated = await deps.taskController.toggleTask(taskId);
-      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-      const rs = await deps.roundStateRepo.get();
-      setRoundState(rs);
-    },
-    []
-  );
+  const toggleTask = useCallback(async (taskId: string) => {
+    const updated = await deps.taskController.toggleTask(taskId);
+    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    const rs = await deps.roundStateRepo.get();
+    setRoundState(rs);
+  }, []);
 
   // ── Reward CRUD ───────────────────────────────────────────────────────────
   const openRewardEdit = useCallback(
@@ -480,7 +473,7 @@ export function useSpinnerApp(): SpinnerAppHook {
       setRewardBeingEdited(rewards.find((r) => r.id === rewardId) ?? null);
       setRewardEditOpen(true);
     },
-    [rewards]
+    [rewards],
   );
   const closeRewardEdit = useCallback(() => setRewardEditOpen(false), []);
 
@@ -490,14 +483,12 @@ export function useSpinnerApp(): SpinnerAppHook {
       const saved = await deps.rewardController.saveReward(
         rewardBeingEdited.id,
         title,
-        durationMinutes
+        durationMinutes,
       );
-      setRewards((prev) =>
-        prev.map((r) => (r.id === saved.id ? saved : r))
-      );
+      setRewards((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
       setRewardEditOpen(false);
     },
-    [rewardBeingEdited]
+    [rewardBeingEdited],
   );
 
   // ── Reset Round ───────────────────────────────────────────────────────────
@@ -513,9 +504,7 @@ export function useSpinnerApp(): SpinnerAppHook {
     if (!taskBeingSplit) return;
     setSplitState("loading");
     try {
-      const subtasks = await deps.splitTaskController.requestAiSplit(
-        taskBeingSplit.id
-      );
+      const subtasks = await deps.splitTaskController.requestAiSplit(taskBeingSplit.id);
       setAiSubtasks(subtasks);
       setSplitState("results");
     } catch (e: unknown) {
@@ -527,16 +516,13 @@ export function useSpinnerApp(): SpinnerAppHook {
   const acceptAiSplit = useCallback(
     async (subtasks: SubtaskData[]) => {
       if (!taskBeingSplit) return;
-      const newTasks = await deps.splitTaskController.confirmSplit(
-        taskBeingSplit.id,
-        subtasks
-      );
+      const newTasks = await deps.splitTaskController.confirmSplit(taskBeingSplit.id, subtasks);
       await reloadAll();
       setSplitOpen(false);
       setTaskBeingSplit(null);
       showToast(`已拆解为 ${newTasks.length} 个子任务，请逐一完成后再转盘 ✂️`);
     },
-    [taskBeingSplit, reloadAll, showToast]
+    [taskBeingSplit, reloadAll, showToast],
   );
 
   // Goes back to the choice screen — split is mandatory, so no full cancel.
@@ -551,8 +537,8 @@ export function useSpinnerApp(): SpinnerAppHook {
       const subtasks = names.map((title) => ({ title, estimatedMinutes: 15 }));
       await acceptAiSplit(subtasks);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [taskBeingSplit, acceptAiSplit]
+
+    [taskBeingSplit, acceptAiSplit],
   );
 
   // Split is mandatory — "cancel" only goes back to the choice screen.
@@ -572,18 +558,18 @@ export function useSpinnerApp(): SpinnerAppHook {
         category: string;
         difficulty: string;
         estimatedMinutes: number;
-      }>
+      }>,
     ) => {
       const VALID_CAT = ["study", "life", "health", "project"] as const;
       const VALID_DIFF = ["easy", "medium", "hard"] as const;
       const mapped = items.map((item) => ({
         title: item.title,
-        category: (VALID_CAT.includes(item.category as typeof VALID_CAT[number])
+        category: (VALID_CAT.includes(item.category as (typeof VALID_CAT)[number])
           ? item.category
-          : "study") as typeof VALID_CAT[number],
-        difficulty: (VALID_DIFF.includes(item.difficulty as typeof VALID_DIFF[number])
+          : "study") as (typeof VALID_CAT)[number],
+        difficulty: (VALID_DIFF.includes(item.difficulty as (typeof VALID_DIFF)[number])
           ? item.difficulty
-          : "easy") as typeof VALID_DIFF[number],
+          : "easy") as (typeof VALID_DIFF)[number],
         estimatedMinutes: item.estimatedMinutes,
       }));
       const newTasks = await deps.taskController.bulkImport(mapped);
@@ -591,7 +577,7 @@ export function useSpinnerApp(): SpinnerAppHook {
       setBulkImportOpen(false);
       showToast(`已导入 ${newTasks.length} 个任务 ✓`);
     },
-    [showToast]
+    [showToast],
   );
 
   // ── Rules ─────────────────────────────────────────────────────────────────
@@ -605,6 +591,7 @@ export function useSpinnerApp(): SpinnerAppHook {
     taskListItems,
     rewardBankVM,
     statsVM,
+    achievementsVM,
     isSpinning,
     targetRotation,
     currentWinnerId,

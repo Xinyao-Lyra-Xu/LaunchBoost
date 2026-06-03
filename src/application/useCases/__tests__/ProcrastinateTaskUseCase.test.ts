@@ -8,16 +8,16 @@ import {
   makeRoundState,
 } from "./testHelpers";
 
-function makeDeps(overrides: {
-  tasks?: ReturnType<typeof makeTask>[];
-  roundState?: Partial<Parameters<typeof makeRoundState>[0]>;
-} = {}) {
+function makeDeps(
+  overrides: {
+    tasks?: ReturnType<typeof makeTask>[];
+    roundState?: Partial<Parameters<typeof makeRoundState>[0]>;
+  } = {},
+) {
   const taskRepo = new InMemoryTaskRepository(
-    overrides.tasks ?? [makeTask({ id: "t1", difficulty: "easy" })]
+    overrides.tasks ?? [makeTask({ id: "t1", difficulty: "easy" })],
   );
-  const roundStateRepo = new InMemoryRoundStateRepository(
-    makeRoundState(overrides.roundState)
-  );
+  const roundStateRepo = new InMemoryRoundStateRepository(makeRoundState(overrides.roundState));
   const statsRepo = new InMemoryStatsRepository();
   const useCase = new ProcrastinateTaskUseCase(taskRepo, roundStateRepo, statsRepo);
   return { taskRepo, roundStateRepo, statsRepo, useCase };

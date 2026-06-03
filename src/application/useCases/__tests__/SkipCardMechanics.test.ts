@@ -15,7 +15,7 @@ import {
 function makeCompleteUC(
   roundStateRepo: InMemoryRoundStateRepository,
   taskRepo = new InMemoryTaskRepository([makeTask({ id: "t1" })]),
-  statsRepo = new InMemoryStatsRepository(makeStats())
+  statsRepo = new InMemoryStatsRepository(makeStats()),
 ) {
   return new CompleteTaskUseCase(taskRepo, roundStateRepo, statsRepo);
 }
@@ -23,7 +23,7 @@ function makeCompleteUC(
 function makeSkipUC(
   roundStateRepo: InMemoryRoundStateRepository,
   taskRepo = new InMemoryTaskRepository([makeTask({ id: "t1" })]),
-  statsRepo = new InMemoryStatsRepository(makeStats())
+  statsRepo = new InMemoryStatsRepository(makeStats()),
 ) {
   return new SkipTaskUseCase(taskRepo, roundStateRepo, statsRepo);
 }
@@ -36,7 +36,7 @@ describe("CompleteTaskUseCase – skip card progress", () => {
     vi.setSystemTime(new Date("2026-05-25T10:00:00"));
 
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 0, skipCardProgressDate: "" })
+      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 0, skipCardProgressDate: "" }),
     );
     const uc = makeCompleteUC(repo);
     const out = await uc.execute("t1");
@@ -51,7 +51,7 @@ describe("CompleteTaskUseCase – skip card progress", () => {
     const TODAY = "2026-5-25";
 
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 1, skipCardProgressDate: TODAY })
+      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 1, skipCardProgressDate: TODAY }),
     );
     const uc = makeCompleteUC(repo);
     const out = await uc.execute("t1");
@@ -66,7 +66,7 @@ describe("CompleteTaskUseCase – skip card progress", () => {
     const TODAY = "2026-5-25";
 
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 2, skipCardProgressDate: TODAY })
+      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 2, skipCardProgressDate: TODAY }),
     );
     const uc = makeCompleteUC(repo);
     const out = await uc.execute("t1");
@@ -81,7 +81,7 @@ describe("CompleteTaskUseCase – skip card progress", () => {
     vi.setSystemTime(new Date("2026-05-26T10:00:00")); // new day → +2 gain
 
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 2, skipCardProgressDate: "2026-5-25" })
+      makeRoundState({ skipCardsLeft: 0, skipCardProgress: 2, skipCardProgressDate: "2026-5-25" }),
     );
     const uc = makeCompleteUC(repo);
     const out = await uc.execute("t1");
@@ -98,7 +98,7 @@ describe("CompleteTaskUseCase – skip card progress", () => {
     const TODAY = "2026-5-25";
 
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 3, skipCardProgress: 2, skipCardProgressDate: TODAY })
+      makeRoundState({ skipCardsLeft: 3, skipCardProgress: 2, skipCardProgressDate: TODAY }),
     );
     const uc = makeCompleteUC(repo);
     const out = await uc.execute("t1");
@@ -110,7 +110,7 @@ describe("CompleteTaskUseCase – skip card progress", () => {
 
   it("clears consecutiveSkips on completion", async () => {
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ consecutiveSkips: 1, skipCardsLeft: 2 })
+      makeRoundState({ consecutiveSkips: 1, skipCardsLeft: 2 }),
     );
     const uc = makeCompleteUC(repo);
     const out = await uc.execute("t1");
@@ -124,7 +124,7 @@ describe("CompleteTaskUseCase – skip card progress", () => {
 describe("SkipTaskUseCase – basic skip", () => {
   it("decrements skipCardsLeft by 1", async () => {
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 2, consecutiveSkips: 0 })
+      makeRoundState({ skipCardsLeft: 2, consecutiveSkips: 0 }),
     );
     const uc = makeSkipUC(repo);
     const out = await uc.execute("t1");
@@ -134,7 +134,7 @@ describe("SkipTaskUseCase – basic skip", () => {
 
   it("sets consecutiveSkips to 1 after a skip", async () => {
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 2, consecutiveSkips: 0 })
+      makeRoundState({ skipCardsLeft: 2, consecutiveSkips: 0 }),
     );
     const uc = makeSkipUC(repo);
     const out = await uc.execute("t1");
@@ -144,7 +144,7 @@ describe("SkipTaskUseCase – basic skip", () => {
 
   it("clears activeTaskId so the next spin is unblocked", async () => {
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 1, activeTaskId: "t1", consecutiveSkips: 0 })
+      makeRoundState({ skipCardsLeft: 1, activeTaskId: "t1", consecutiveSkips: 0 }),
     );
     const uc = makeSkipUC(repo);
     const out = await uc.execute("t1");
@@ -154,7 +154,7 @@ describe("SkipTaskUseCase – basic skip", () => {
 
   it("adds the task ID to skippedTaskIdsThisRound", async () => {
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 1, consecutiveSkips: 0 })
+      makeRoundState({ skipCardsLeft: 1, consecutiveSkips: 0 }),
     );
     const uc = makeSkipUC(repo);
     const out = await uc.execute("t1");
@@ -168,7 +168,7 @@ describe("SkipTaskUseCase – basic skip", () => {
 describe("SkipTaskUseCase – guards", () => {
   it("throws when skipCardsLeft is 0", async () => {
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 0, consecutiveSkips: 0 })
+      makeRoundState({ skipCardsLeft: 0, consecutiveSkips: 0 }),
     );
     const uc = makeSkipUC(repo);
     await expect(uc.execute("t1")).rejects.toThrow("没有跳过卷");
@@ -176,7 +176,7 @@ describe("SkipTaskUseCase – guards", () => {
 
   it("throws when consecutiveSkips >= 1 even with cards available", async () => {
     const repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 3, consecutiveSkips: 1 })
+      makeRoundState({ skipCardsLeft: 3, consecutiveSkips: 1 }),
     );
     const uc = makeSkipUC(repo);
     await expect(uc.execute("t1")).rejects.toThrow("需要先完成一个任务");
@@ -191,12 +191,9 @@ describe("SkipCardMechanics – full cycle", () => {
   let statsRepo: InMemoryStatsRepository;
 
   beforeEach(() => {
-    taskRepo = new InMemoryTaskRepository([
-      makeTask({ id: "t1" }),
-      makeTask({ id: "t2" }),
-    ]);
+    taskRepo = new InMemoryTaskRepository([makeTask({ id: "t1" }), makeTask({ id: "t2" })]);
     repo = new InMemoryRoundStateRepository(
-      makeRoundState({ skipCardsLeft: 2, consecutiveSkips: 0 })
+      makeRoundState({ skipCardsLeft: 2, consecutiveSkips: 0 }),
     );
     statsRepo = new InMemoryStatsRepository(makeStats());
   });

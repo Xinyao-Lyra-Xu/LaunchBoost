@@ -36,7 +36,7 @@ export function calculateWheelItems(input: {
     (t) =>
       t.active &&
       !roundState.completedTaskIdsThisRound.includes(t.id) &&
-      !roundState.skippedTaskIdsThisRound.includes(t.id)
+      !roundState.skippedTaskIdsThisRound.includes(t.id),
   );
 
   const activeRewards = rewards.filter((r) => r.active);
@@ -51,18 +51,17 @@ export function calculateWheelItems(input: {
   if (hasTasks && hasRewards) {
     const rewardRawTotal = activeRewards.reduce((s, r) => s + r.baseWeight, 0);
     activeRewards.forEach((r) => {
-      const w = ((r.baseWeight / rewardRawTotal) * REWARD_SHARE * SCALE);
+      const w = (r.baseWeight / rewardRawTotal) * REWARD_SHARE * SCALE;
       items.push({ id: r.id, type: "reward", title: r.title, weight: w, probability: 0 });
     });
 
     const taskEffTotal = activeTasks.reduce(
       (s, t) => s + getEffectiveWeight(t, roundState.procrastinationRecoveryMode),
-      0
+      0,
     );
     activeTasks.forEach((t) => {
       const w =
-        (getEffectiveWeight(t, roundState.procrastinationRecoveryMode) /
-          taskEffTotal) *
+        (getEffectiveWeight(t, roundState.procrastinationRecoveryMode) / taskEffTotal) *
         TASK_SHARE *
         SCALE;
       items.push({ id: t.id, type: "task", title: t.title, weight: w, probability: 0 });
@@ -70,7 +69,7 @@ export function calculateWheelItems(input: {
   } else if (hasTasks) {
     const taskEffTotal = activeTasks.reduce(
       (s, t) => s + getEffectiveWeight(t, roundState.procrastinationRecoveryMode),
-      0
+      0,
     );
     activeTasks.forEach((t) => {
       items.push({
@@ -85,7 +84,13 @@ export function calculateWheelItems(input: {
     });
   } else {
     activeRewards.forEach((r) => {
-      items.push({ id: r.id, type: "reward", title: r.title, weight: r.baseWeight, probability: 0 });
+      items.push({
+        id: r.id,
+        type: "reward",
+        title: r.title,
+        weight: r.baseWeight,
+        probability: 0,
+      });
     });
   }
 

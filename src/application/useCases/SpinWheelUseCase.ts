@@ -18,7 +18,7 @@ export class SpinWheelUseCase {
     private taskRepo: TaskRepository,
     private rewardRepo: RewardRepository,
     private roundStateRepo: RoundStateRepository,
-    private spinHistoryRepo: SpinHistoryRepository
+    private spinHistoryRepo: SpinHistoryRepository,
   ) {}
 
   async execute(): Promise<SpinWheelOutput> {
@@ -39,9 +39,7 @@ export class SpinWheelUseCase {
     }
 
     // Block spin while any subtask from a previous split is still active.
-    const pendingSubtasks = tasks.filter(
-      (t) => t.active && t.parentTaskId != null
-    );
+    const pendingSubtasks = tasks.filter((t) => t.active && t.parentTaskId != null);
     if (pendingSubtasks.length > 0) {
       throw new Error("请先完成所有子任务后再转动。");
     }

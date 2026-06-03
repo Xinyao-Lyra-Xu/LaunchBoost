@@ -8,7 +8,7 @@ import { useTaskTimer } from "../hooks/useTaskTimer";
 /** Must match SkipTaskUseCase.MAX_CONSECUTIVE_SKIPS */
 const MAX_CONSECUTIVE_SKIPS = 1;
 /** Must match CompleteTaskUseCase.SKIP_CARD_MAX / TASKS_PER_CARD */
-const SKIP_CARD_MAX  = 3;
+const SKIP_CARD_MAX = 3;
 const TASKS_PER_CARD = 3;
 
 interface SpinResultModalProps {
@@ -19,7 +19,7 @@ interface SpinResultModalProps {
   skipCardsLeft: number;
   skipCardProgress: number;
   consecutiveSkips: number;
-  onCompleteTask(): void;
+  onCompleteTask(focusMinutes: number): void;
   onProcrastinateTask(): void;
   onSkipTask(): void;
   onUseRewardNow(): void;
@@ -51,16 +51,14 @@ export function SpinResultModal({
 }: SpinResultModalProps) {
   // Resolve task first so hooks can use it (hooks must be called unconditionally).
   const task =
-    winnerId && winnerType === "task"
-      ? (tasks.find((t) => t.id === winnerId) ?? null)
-      : null;
+    winnerId && winnerType === "task" ? (tasks.find((t) => t.id === winnerId) ?? null) : null;
 
   const timerActive = task !== null;
   const timer = useTaskTimer(
     timerActive,
     task?.timerMode ?? "stopwatch",
     (task?.estimatedMinutes ?? 15) * 60,
-    winnerId ?? ""
+    winnerId ?? "",
   );
 
   // Fire a toast once when a countdown reaches zero.
@@ -93,10 +91,18 @@ export function SpinResultModal({
       <div id="result-modal" className="modal">
         <div className="modal-backdrop" id="result-backdrop" />
         <div className="modal-content reward-result" id="modal-content">
-          <div className="modal-emoji" id="modal-emoji">🎉</div>
-          <div className="modal-type" id="modal-type">✨ 获得奖励</div>
-          <div className="modal-title" id="modal-title">{reward.title}</div>
-          <div className="modal-desc" id="modal-desc">享受 {dur} 分钟的奖励时间！</div>
+          <div className="modal-emoji" id="modal-emoji">
+            🎉
+          </div>
+          <div className="modal-type" id="modal-type">
+            ✨ 获得奖励
+          </div>
+          <div className="modal-title" id="modal-title">
+            {reward.title}
+          </div>
+          <div className="modal-desc" id="modal-desc">
+            享受 {dur} 分钟的奖励时间！
+          </div>
           <div className="modal-actions" id="modal-actions">
             <button className="btn-complete" onClick={onUseRewardNow}>
               立即使用 ✓
@@ -147,33 +153,33 @@ export function SpinResultModal({
     skipCardsLeft <= 0 && consecutiveSkips >= MAX_CONSECUTIVE_SKIPS
       ? "没有跳过卷，且需先完成 1 个任务"
       : skipCardsLeft <= 0
-      ? "没有跳过卷了"
-      : consecutiveSkips >= MAX_CONSECUTIVE_SKIPS
-      ? "需先完成 1 个任务才能再次跳过"
-      : null;
+        ? "没有跳过卷了"
+        : consecutiveSkips >= MAX_CONSECUTIVE_SKIPS
+          ? "需先完成 1 个任务才能再次跳过"
+          : null;
 
   const progressToNext = TASKS_PER_CARD - skipCardProgress;
   const skipHint =
-    skipCardsLeft >= SKIP_CARD_MAX
-      ? "跳过卷已满"
-      : `再完成 ${progressToNext} 个任务可得 1 张`;
+    skipCardsLeft >= SKIP_CARD_MAX ? "跳过卷已满" : `再完成 ${progressToNext} 个任务可得 1 张`;
 
   return (
     <div id="result-modal" className="modal">
       <div className="modal-backdrop" id="result-backdrop" />
       <div className="modal-content task-result" id="modal-content">
-        <div className="modal-emoji" id="modal-emoji">📚</div>
+        <div className="modal-emoji" id="modal-emoji">
+          📚
+        </div>
         <div className="modal-type" id="modal-type">
           {catLabel} · {diffLabel} · {mins} 分钟
         </div>
-        <div className="modal-title" id="modal-title">{task.title}</div>
+        <div className="modal-title" id="modal-title">
+          {task.title}
+        </div>
 
         {/* ── Timer ── */}
         <div className="modal-timer">
           <div className="timer-est-row">
-            <span className="timer-label">
-              {isStopwatch ? "⏱ 正计时" : "⏳ 倒计时"}
-            </span>
+            <span className="timer-label">{isStopwatch ? "⏱ 正计时" : "⏳ 倒计时"}</span>
             <span className="timer-label" style={{ marginLeft: "auto", opacity: 0.6 }}>
               计划 {mins} 分钟
             </span>
@@ -192,14 +198,15 @@ export function SpinResultModal({
               {timer.paused ? "▶ 继续" : "⏸ 暂停"}
             </button>
           </div>
-          {resultText && (
-            <div className={`timer-result ${resultClass}`}>{resultText}</div>
-          )}
+          {resultText && <div className={`timer-result ${resultClass}`}>{resultText}</div>}
         </div>
 
         {/* ── Actions ── */}
         <div className="modal-actions" id="modal-actions">
-          <button className="btn-complete" onClick={onCompleteTask}>
+          <button
+            className="btn-complete"
+            onClick={() => onCompleteTask(Math.max(0, Math.round(timer.elapsed / 60)))}
+          >
             完成 ✓
           </button>
           <button className="btn-procrastinate" onClick={onProcrastinateTask}>
@@ -219,9 +226,7 @@ export function SpinResultModal({
             跳过 🃏 ({skipCardsLeft}/{SKIP_CARD_MAX})
           </button>
           <div className="skip-card-hint" id="skip-hint">
-            {skipDisabledReason
-              ? `⚠️ ${skipDisabledReason}`
-              : skipHint}
+            {skipDisabledReason ? `⚠️ ${skipDisabledReason}` : skipHint}
           </div>
         </div>
       </div>

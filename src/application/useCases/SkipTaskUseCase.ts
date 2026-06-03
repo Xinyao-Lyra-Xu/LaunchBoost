@@ -19,7 +19,7 @@ export class SkipTaskUseCase {
   constructor(
     private taskRepo: TaskRepository,
     private roundStateRepo: RoundStateRepository,
-    private statsRepo: StatsRepository
+    private statsRepo: StatsRepository,
   ) {}
 
   async execute(taskId: string): Promise<SkipTaskOutput> {
@@ -41,9 +41,9 @@ export class SkipTaskUseCase {
     if (!task) throw new Error(`Task ${taskId} not found`);
 
     task.skippedCount += 1;
-    roundState.skipCardsLeft     -= 1;
-    roundState.consecutiveSkips  += 1;
-    roundState.activeTaskId       = null; // resolve active lock so next spin is unblocked
+    roundState.skipCardsLeft -= 1;
+    roundState.consecutiveSkips += 1;
+    roundState.activeTaskId = null; // resolve active lock so next spin is unblocked
 
     if (!roundState.skippedTaskIdsThisRound.includes(taskId)) {
       roundState.skippedTaskIdsThisRound.push(taskId);

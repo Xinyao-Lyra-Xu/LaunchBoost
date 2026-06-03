@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect } from "react";
 import type { WheelDisplayItem } from "../../../interface-adapters/viewModels/SpinnerViewModel";
 
 const DPR = window.devicePixelRatio || 1;
@@ -17,11 +17,7 @@ function darken(hex: string, amount: number): string {
  * Truncates text to fit within maxWidth using a binary-search approach.
  * Returns empty string if even a single character + ellipsis doesn't fit.
  */
-function truncateText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number
-): string {
+function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   const ellipsis = "…";
   const ellipsisW = ctx.measureText(ellipsis).width;
@@ -44,7 +40,7 @@ function drawText(
   text: string,
   midAngle: number,
   isReward: boolean,
-  arcAngle: number
+  arcAngle: number,
 ) {
   // Skip segments too narrow to render any readable text.
   if (arcAngle < Math.PI / 18) return;
@@ -62,9 +58,7 @@ function drawText(
 
   // Scale font size with available arc so text never overflows its segment.
   const fontSize =
-    arcAngle < Math.PI / 9  ? 9  :
-    arcAngle < Math.PI / 6  ? 11 :
-    arcAngle < Math.PI / 4  ? 12 : 13;
+    arcAngle < Math.PI / 9 ? 9 : arcAngle < Math.PI / 6 ? 11 : arcAngle < Math.PI / 4 ? 12 : 13;
   ctx.font = `bold ${fontSize}px "Microsoft YaHei", Arial, sans-serif`;
 
   // Radial text spans from inner hub edge to near the outer rim.
@@ -90,10 +84,7 @@ function drawText(
   ctx.restore();
 }
 
-function drawWheelOnCanvas(
-  ctx: CanvasRenderingContext2D,
-  segments: WheelDisplayItem[]
-) {
+function drawWheelOnCanvas(ctx: CanvasRenderingContext2D, segments: WheelDisplayItem[]) {
   ctx.clearRect(0, 0, DISPLAY, DISPLAY);
 
   if (segments.length === 0) {
@@ -170,7 +161,6 @@ interface SpinnerWheelProps {
 
 export function SpinnerWheel({
   segments,
-  isSpinning,
   canSpin,
   targetRotation,
   statsLine,
@@ -207,9 +197,8 @@ export function SpinnerWheel({
       canvas.style.transform = `rotate(${norm}deg)`;
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          canvas.style.transition =
-            "transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)";
-        })
+          canvas.style.transition = "transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)";
+        }),
       );
       onSpinComplete(norm);
     }, 4150);
@@ -240,12 +229,7 @@ export function SpinnerWheel({
       </div>
 
       <div className="wheel-controls">
-        <button
-          id="spin-btn"
-          className="spin-button"
-          onClick={onSpin}
-          disabled={!canSpin}
-        >
+        <button id="spin-btn" className="spin-button" onClick={onSpin} disabled={!canSpin}>
           <span className="spin-icon">🎯</span>
           <span>开始转动！</span>
         </button>

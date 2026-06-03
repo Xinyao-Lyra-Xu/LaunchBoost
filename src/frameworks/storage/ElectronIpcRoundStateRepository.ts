@@ -12,15 +12,13 @@ export class ElectronIpcRoundStateRepository implements RoundStateRepository {
     const sc = meta.skipCards;
 
     // Gracefully handle both missing data and the old { count, weekKey } format.
-    const skipCardsLeft    = sc?.count            ?? SKIP_CARD_INITIAL;
-    const skipCardProgress = sc?.progress         ?? 0;
+    const skipCardsLeft = sc?.count ?? SKIP_CARD_INITIAL;
+    const skipCardProgress = sc?.progress ?? 0;
     const consecutiveSkips = sc?.consecutiveSkips ?? 0;
     const skipCardProgressDate = sc?.progressDate ?? "";
 
     // Derive completed and skipped IDs from task flags
-    const completedIds = data.tasks
-      .filter((t) => t.completed)
-      .map((t) => String(t.id));
+    const completedIds = data.tasks.filter((t) => t.completed).map((t) => String(t.id));
 
     const skippedIds = data.tasks
       .filter((t) => !t.completed && !t.activeInCurrentRound)
@@ -44,21 +42,21 @@ export class ElectronIpcRoundStateRepository implements RoundStateRepository {
 
     data.meta = data.meta ?? {};
     data.meta.skipCards = {
-      count:          state.skipCardsLeft,
-      progress:       state.skipCardProgress,
+      count: state.skipCardsLeft,
+      progress: state.skipCardProgress,
       consecutiveSkips: state.consecutiveSkips,
-      progressDate:   state.skipCardProgressDate,
+      progressDate: state.skipCardProgressDate,
     };
 
     data.meta.pendingSplitTaskId = state.pendingSplitTaskId;
-    data.meta.activeTaskId       = state.activeTaskId;
+    data.meta.activeTaskId = state.activeTaskId;
 
     // Sync task flags from round state
     data.tasks.forEach((t) => {
       const id = String(t.id);
       const isCompleted = state.completedTaskIdsThisRound.includes(id);
-      const isSkipped   = state.skippedTaskIdsThisRound.includes(id);
-      t.completed          = isCompleted;
+      const isSkipped = state.skippedTaskIdsThisRound.includes(id);
+      t.completed = isCompleted;
       t.activeInCurrentRound = !isCompleted && !isSkipped;
     });
 

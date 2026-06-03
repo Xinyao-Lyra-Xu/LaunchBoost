@@ -58,7 +58,12 @@ export interface PersistedMeta {
     totalProcrastinated?: number;
     totalSkipped?: number;
     totalRewardsBanked?: number;
+    totalMinutes?: number;
+    activeDays?: number;
+    lastActiveDate?: string;
   };
+  /** Map of unlocked achievement ids. */
+  achievements?: Record<string, boolean>;
 }
 
 export interface PersistedData {
@@ -72,10 +77,9 @@ declare global {
     api: {
       loadData(): Promise<PersistedData>;
       saveData(data: PersistedData): Promise<boolean>;
-      splitTask(input: SplitTaskRequest): Promise<
-        | { subtasks: SubtaskData[]; error?: never }
-        | { error: string; subtasks?: never }
-      >;
+      splitTask(
+        input: SplitTaskRequest,
+      ): Promise<{ subtasks: SubtaskData[]; error?: never } | { error: string; subtasks?: never }>;
     };
   }
 }

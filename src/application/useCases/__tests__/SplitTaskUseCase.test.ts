@@ -9,20 +9,20 @@ import {
   makeRoundState,
 } from "./testHelpers";
 
-function makeDeps(overrides: {
-  tasks?: ReturnType<typeof makeTask>[];
-  roundState?: Partial<Parameters<typeof makeRoundState>[0]>;
-  splitterTitles?: string[];
-} = {}) {
+function makeDeps(
+  overrides: {
+    tasks?: ReturnType<typeof makeTask>[];
+    roundState?: Partial<Parameters<typeof makeRoundState>[0]>;
+    splitterTitles?: string[];
+  } = {},
+) {
   const taskRepo = new InMemoryTaskRepository(
-    overrides.tasks ?? [makeTask({ id: "t1", title: "原始任务", difficulty: "hard" })]
+    overrides.tasks ?? [makeTask({ id: "t1", title: "原始任务", difficulty: "hard" })],
   );
   const roundStateRepo = new InMemoryRoundStateRepository(
-    makeRoundState({ pendingSplitTaskId: "t1", ...overrides.roundState })
+    makeRoundState({ pendingSplitTaskId: "t1", ...overrides.roundState }),
   );
-  const gateway = new StubTaskSplitterGateway(
-    overrides.splitterTitles ?? ["子任务 A", "子任务 B"]
-  );
+  const gateway = new StubTaskSplitterGateway(overrides.splitterTitles ?? ["子任务 A", "子任务 B"]);
   const useCase = new SplitTaskUseCase(taskRepo, gateway, roundStateRepo);
   return { taskRepo, roundStateRepo, gateway, useCase };
 }
@@ -37,15 +37,15 @@ describe("SplitTaskUseCase.confirmSplit", () => {
 
   it("throws when any subtask title is empty", async () => {
     const { useCase } = makeDeps();
-    await expect(
-      useCase.confirmSplit("t1", [{ title: "", estimatedMinutes: 15 }])
-    ).rejects.toThrow("子任务名称不能为空");
+    await expect(useCase.confirmSplit("t1", [{ title: "", estimatedMinutes: 15 }])).rejects.toThrow(
+      "子任务名称不能为空",
+    );
   });
 
   it("throws when any subtask title is whitespace only", async () => {
     const { useCase } = makeDeps();
     await expect(
-      useCase.confirmSplit("t1", [{ title: "   ", estimatedMinutes: 15 }])
+      useCase.confirmSplit("t1", [{ title: "   ", estimatedMinutes: 15 }]),
     ).rejects.toThrow("子任务名称不能为空");
   });
 
@@ -97,7 +97,7 @@ describe("SplitTaskUseCase.confirmSplit", () => {
   it("throws when original task is not found", async () => {
     const { useCase } = makeDeps();
     await expect(
-      useCase.confirmSplit("nonexistent", [{ title: "Sub A", estimatedMinutes: 15 }])
+      useCase.confirmSplit("nonexistent", [{ title: "Sub A", estimatedMinutes: 15 }]),
     ).rejects.toThrow("not found");
   });
 });
@@ -115,7 +115,7 @@ describe("SplitTaskUseCase.execute (AI path)", () => {
   it("throws when gateway returns no subtasks", async () => {
     const taskRepo = new InMemoryTaskRepository([makeTask({ id: "t1" })]);
     const roundStateRepo = new InMemoryRoundStateRepository(
-      makeRoundState({ pendingSplitTaskId: "t1" })
+      makeRoundState({ pendingSplitTaskId: "t1" }),
     );
     const emptyGateway = new StubTaskSplitterGateway([]);
     // Override StubTaskSplitterGateway to return empty array
@@ -131,7 +131,7 @@ describe("SplitTaskUseCase.execute (AI path)", () => {
     const useCase = new SplitTaskUseCase(
       taskRepo,
       new FailingTaskSplitterGateway(),
-      roundStateRepo
+      roundStateRepo,
     );
     await expect(useCase.execute("t1")).rejects.toThrow("AI service unavailable");
   });
@@ -142,7 +142,7 @@ describe("SplitTaskUseCase.execute (AI path)", () => {
 describe("pendingSplitTaskId persistence", () => {
   it("persists pendingSplitTaskId and restores it correctly", async () => {
     const roundStateRepo = new InMemoryRoundStateRepository(
-      makeRoundState({ pendingSplitTaskId: "t99" })
+      makeRoundState({ pendingSplitTaskId: "t99" }),
     );
     const loaded = await roundStateRepo.get();
     expect(loaded.pendingSplitTaskId).toBe("t99");

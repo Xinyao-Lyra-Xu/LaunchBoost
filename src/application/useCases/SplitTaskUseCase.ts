@@ -11,7 +11,7 @@ export class SplitTaskUseCase {
   constructor(
     private taskRepo: TaskRepository,
     private splitterGateway: TaskSplitterGateway,
-    private roundStateRepo: RoundStateRepository
+    private roundStateRepo: RoundStateRepository,
   ) {}
 
   async execute(taskId: string): Promise<SplitTaskOutput> {
@@ -34,10 +34,7 @@ export class SplitTaskUseCase {
   }
 
   /** Applies accepted subtasks: deactivates original, creates children, clears pending split. */
-  async confirmSplit(
-    originalTaskId: string,
-    subtasks: SubtaskData[]
-  ): Promise<Task[]> {
+  async confirmSplit(originalTaskId: string, subtasks: SubtaskData[]): Promise<Task[]> {
     if (!subtasks || subtasks.length === 0) {
       throw new Error("至少需要 1 个子任务才能确认拆解。");
     }

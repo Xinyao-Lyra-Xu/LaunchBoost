@@ -7,13 +7,9 @@ import type { Task } from "../entities/Task";
  * In procrastination recovery mode, easy tasks get a higher multiplier
  * and hard tasks get a lower one.
  */
-export function getEffectiveWeight(
-  task: Task,
-  procrastinationRecoveryMode: boolean
-): number {
+export function getEffectiveWeight(task: Task, procrastinationRecoveryMode: boolean): number {
   const base = task.baseWeight;
   if (!procrastinationRecoveryMode) return base;
-  const multiplier =
-    PROCRASTINATION_MULTIPLIERS[task.difficulty as TaskDifficulty] ?? 1;
+  const multiplier = PROCRASTINATION_MULTIPLIERS[task.difficulty as TaskDifficulty] ?? 1;
   return base * multiplier;
 }

@@ -12,30 +12,20 @@ export interface BankRewardOutput {
 export class BankRewardUseCase {
   constructor(
     private rewardRepo: RewardRepository,
-    private statsRepo: StatsRepository
+    private statsRepo: StatsRepository,
   ) {}
 
   async execute(rewardId: string): Promise<BankRewardOutput> {
-    const [rewards, stats] = await Promise.all([
-      this.rewardRepo.getAll(),
-      this.statsRepo.get(),
-    ]);
+    const [rewards, stats] = await Promise.all([this.rewardRepo.getAll(), this.statsRepo.get()]);
 
     const reward = rewards.find((r) => r.id === rewardId);
     if (!reward) throw new Error(`Reward ${rewardId} not found`);
 
     reward.bankedCount += 1;
 
-    const updatedStats = bumpStats(
-      stats,
-      "rewardsBankedToday",
-      "totalRewardsBanked"
-    );
+    const updatedStats = bumpStats(stats, "rewardsBankedToday", "totalRewardsBanked");
 
-    await Promise.all([
-      this.rewardRepo.update(reward),
-      this.statsRepo.save(updatedStats),
-    ]);
+    await Promise.all([this.rewardRepo.update(reward), this.statsRepo.save(updatedStats)]);
 
     return { reward, stats: updatedStats };
   }

@@ -89,7 +89,9 @@ describe("Scenario 1 – modal renders task name and mandatory badge", () => {
 describe("Scenario 11 – modal cannot be dismissed", () => {
   it("has no close / cancel / 不拆分 button", () => {
     renderModal();
-    expect(screen.queryByRole("button", { name: /关闭|close|取消|不拆分/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /关闭|close|取消|不拆分/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("clicking the backdrop does NOT call onCancel", () => {
@@ -210,7 +212,7 @@ describe("Scenario 6 – AI results panel", () => {
       expect.arrayContaining([
         expect.objectContaining({ title: "Research" }),
         expect.objectContaining({ title: "Write draft" }),
-      ])
+      ]),
     );
   });
 
@@ -223,7 +225,7 @@ describe("Scenario 6 – AI results panel", () => {
     await user.type(input, "Deep research");
     await user.click(screen.getByRole("button", { name: /确认拆解/ }));
     expect(onAcceptAi).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ title: "Deep research" })])
+      expect.arrayContaining([expect.objectContaining({ title: "Deep research" })]),
     );
   });
 

@@ -16,11 +16,24 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
   const [repeatable, setRepeatable] = useState(true);
   const [timerMode, setTimerMode] = useState<TimerMode>("stopwatch");
 
-  useEffect(() => {
+  // Sync form defaults from the task whenever the editor (re)opens or switches
+  // task. Done during render to avoid a set-state-in-effect cascade; keyed on
+  // task identity so an open editor doesn't keep resetting on every render.
+  const syncKey = isOpen ? (task?.id ?? "new") : null;
+  const [syncedKey, setSyncedKey] = useState<string | null>(null);
+  if (syncKey !== syncedKey) {
+    setSyncedKey(syncKey);
     if (isOpen) {
       setRepeatable(task ? task.repeatable !== false : true);
       setTimerMode(task?.timerMode ?? "stopwatch");
-      setTimeout(() => titleRef.current?.focus(), 60);
+    }
+  }
+
+  // Focus the title field shortly after opening (side effect, not state).
+  useEffect(() => {
+    if (isOpen) {
+      const id = setTimeout(() => titleRef.current?.focus(), 60);
+      return () => clearTimeout(id);
     }
   }, [isOpen, task]);
 
@@ -70,7 +83,12 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
             </div>
             <div className="form-row">
               <label>分类</label>
-              <select name="category" id="te-category" className="edit-select" defaultValue={task?.category ?? "study"}>
+              <select
+                name="category"
+                id="te-category"
+                className="edit-select"
+                defaultValue={task?.category ?? "study"}
+              >
                 <option value="study">📚 学习</option>
                 <option value="life">🏠 生活</option>
                 <option value="health">💪 健康</option>
@@ -79,7 +97,12 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
             </div>
             <div className="form-row">
               <label>难度</label>
-              <select name="difficulty" id="te-difficulty" className="edit-select" defaultValue={task?.difficulty ?? "easy"}>
+              <select
+                name="difficulty"
+                id="te-difficulty"
+                className="edit-select"
+                defaultValue={task?.difficulty ?? "easy"}
+              >
                 <option value="easy">🟢 简单</option>
                 <option value="medium">🟡 中等</option>
                 <option value="hard">🔴 困难</option>
@@ -87,11 +110,27 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
             </div>
             <div className="form-row">
               <label>预计时间（分钟）</label>
-              <input type="number" name="minutes" id="te-minutes" className="edit-input" min={1} max={480} defaultValue={task?.estimatedMinutes ?? 15} />
+              <input
+                type="number"
+                name="minutes"
+                id="te-minutes"
+                className="edit-input"
+                min={1}
+                max={480}
+                defaultValue={task?.estimatedMinutes ?? 15}
+              />
             </div>
             <div className="form-row">
               <label>权重 (1–5)</label>
-              <input type="number" name="weight" id="te-weight" className="edit-input" min={1} max={5} defaultValue={task?.baseWeight ?? 2} />
+              <input
+                type="number"
+                name="weight"
+                id="te-weight"
+                className="edit-input"
+                min={1}
+                max={5}
+                defaultValue={task?.baseWeight ?? 2}
+              />
             </div>
             <div className="form-row full">
               <label className="checkbox-label">
@@ -107,7 +146,12 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
             {repeatable && (
               <div className="form-row" id="te-freq-row">
                 <label>重复频率</label>
-                <select name="frequency" id="te-frequency" className="edit-select" defaultValue={task?.frequency ?? "custom"}>
+                <select
+                  name="frequency"
+                  id="te-frequency"
+                  className="edit-select"
+                  defaultValue={task?.frequency ?? "custom"}
+                >
                   <option value="daily">每天</option>
                   <option value="weekly">每周</option>
                   <option value="custom">自定义</option>
@@ -142,8 +186,12 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
           </div>
         </form>
         <div className="modal-actions">
-          <button id="task-edit-cancel" className="btn-secondary" onClick={onClose}>取消</button>
-          <button id="task-edit-confirm" className="btn-primary" onClick={handleConfirm}>确认</button>
+          <button id="task-edit-cancel" className="btn-secondary" onClick={onClose}>
+            取消
+          </button>
+          <button id="task-edit-confirm" className="btn-primary" onClick={handleConfirm}>
+            确认
+          </button>
         </div>
       </div>
     </div>

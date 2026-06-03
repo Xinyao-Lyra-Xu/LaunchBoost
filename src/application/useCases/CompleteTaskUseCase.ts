@@ -21,10 +21,10 @@ export class CompleteTaskUseCase {
   constructor(
     private taskRepo: TaskRepository,
     private roundStateRepo: RoundStateRepository,
-    private statsRepo: StatsRepository
+    private statsRepo: StatsRepository,
   ) {}
 
-  async execute(taskId: string): Promise<CompleteTaskOutput> {
+  async execute(taskId: string, focusMinutes = 0): Promise<CompleteTaskOutput> {
     const [tasks, roundState, stats] = await Promise.all([
       this.taskRepo.getAll(),
       this.roundStateRepo.get(),
@@ -67,7 +67,13 @@ export class CompleteTaskUseCase {
     // Completing a task clears the consecutive-skip restriction.
     roundState.consecutiveSkips = 0;
 
-    const updatedStats = bumpStats(stats, "completedToday", "totalCompleted");
+    let updatedStats = bumpStats(stats, "completedToday", "totalCompleted");
+    if (focusMinutes > 0) {
+      updatedStats = {
+        ...updatedStats,
+        totalMinutes: updatedStats.totalMinutes + Math.round(focusMinutes),
+      };
+    }
 
     await this.taskRepo.update(task);
     await this.statsRepo.save(updatedStats);

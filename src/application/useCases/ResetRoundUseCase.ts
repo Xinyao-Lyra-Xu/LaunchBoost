@@ -11,7 +11,7 @@ export interface ResetRoundOutput {
 export class ResetRoundUseCase {
   constructor(
     private taskRepo: TaskRepository,
-    private roundStateRepo: RoundStateRepository
+    private roundStateRepo: RoundStateRepository,
   ) {}
 
   async execute(): Promise<ResetRoundOutput> {
@@ -31,10 +31,7 @@ export class ResetRoundUseCase {
     roundState.skippedTaskIdsThisRound = [];
     roundState.procrastinationRecoveryMode = false;
 
-    await Promise.all([
-      this.taskRepo.saveAll(tasks),
-      this.roundStateRepo.save(roundState),
-    ]);
+    await Promise.all([this.taskRepo.saveAll(tasks), this.roundStateRepo.save(roundState)]);
 
     return { tasks, roundState };
   }
