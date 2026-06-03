@@ -12,7 +12,7 @@ function loadApiKey() {
       const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
       if (cfg.anthropicApiKey) return cfg.anthropicApiKey;
     }
-  } catch (e) {
+  } catch {
     /* fall through to env */
   }
   return process.env.ANTHROPIC_API_KEY || null;
@@ -28,7 +28,7 @@ function httpsPost(options, body) {
       res.on("end", () => {
         try {
           resolve({ status: res.statusCode, body: JSON.parse(raw) });
-        } catch (e) {
+        } catch {
           resolve({ status: res.statusCode, body: raw });
         }
       });

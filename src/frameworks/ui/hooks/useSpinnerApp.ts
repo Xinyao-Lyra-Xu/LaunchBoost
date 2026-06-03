@@ -158,6 +158,9 @@ export function useSpinnerApp(): SpinnerAppHook {
 
   // Shuffled display order — re-randomised whenever the set of wheel items changes.
   const [shuffledWheelItems, setShuffledWheelItems] = useState<WheelItem[]>([]);
+  // Tracks the wheelItems reference last arranged, so we re-shuffle on change
+  // without a setState-in-effect cascade. null forces a shuffle on first render.
+  const [arrangedFrom, setArrangedFrom] = useState<WheelItem[] | null>(null);
 
   const [isSpinning, setIsSpinning] = useState(false);
   const [targetRotation, setTargetRotation] = useState(0);
@@ -232,9 +235,11 @@ export function useSpinnerApp(): SpinnerAppHook {
   // arrangeWheelItems interleaves large and small segments so they never cluster,
   // then randomly rotates the starting position for variety each round.
   // Both rendering and spin-rotation calculation use this same array.
-  useEffect(() => {
+  // Done during render (not in an effect) to avoid a cascading re-render.
+  if (wheelItems !== arrangedFrom) {
+    setArrangedFrom(wheelItems);
     setShuffledWheelItems(arrangeWheelItems(wheelItems));
-  }, [wheelItems]);
+  }
 
   const wheelSegments = useMemo(
     () => toWheelDisplayItems(shuffledWheelItems),

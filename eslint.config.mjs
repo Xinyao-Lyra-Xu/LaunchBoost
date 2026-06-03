@@ -24,11 +24,6 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "off",
-      // Migration-era debt: the existing (tested, working) hooks call setState
-      // inside effects. react-hooks v7 flags this as an error by default; we
-      // keep it visible as a warning and will resolve it during the
-      // architecture-migration phase rather than risk behavior changes here.
-      "react-hooks/set-state-in-effect": "warn",
     },
   },
 

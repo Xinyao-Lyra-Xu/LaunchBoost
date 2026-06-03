@@ -28,11 +28,14 @@ export function useTaskTimer(
   const [paused, setPaused] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Reset when the active task changes.
-  useEffect(() => {
+  // Reset when the active task changes. Adjusting state during render (instead
+  // of in an effect) avoids an extra render and the set-state-in-effect cascade.
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (resetKey !== prevResetKey) {
+    setPrevResetKey(resetKey);
     setElapsed(0);
     setPaused(false);
-  }, [resetKey]);
+  }
 
   // Tick every second while active and not paused.
   useEffect(() => {

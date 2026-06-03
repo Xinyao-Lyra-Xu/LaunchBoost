@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect } from "react";
 import type { WheelDisplayItem } from "../../../interface-adapters/viewModels/SpinnerViewModel";
 
 const DPR = window.devicePixelRatio || 1;
@@ -161,7 +161,6 @@ interface SpinnerWheelProps {
 
 export function SpinnerWheel({
   segments,
-  isSpinning,
   canSpin,
   targetRotation,
   statsLine,

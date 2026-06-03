@@ -16,11 +16,24 @@ export function TaskEditor({ isOpen, task, onClose, onSave }: TaskEditorProps) {
   const [repeatable, setRepeatable] = useState(true);
   const [timerMode, setTimerMode] = useState<TimerMode>("stopwatch");
 
-  useEffect(() => {
+  // Sync form defaults from the task whenever the editor (re)opens or switches
+  // task. Done during render to avoid a set-state-in-effect cascade; keyed on
+  // task identity so an open editor doesn't keep resetting on every render.
+  const syncKey = isOpen ? (task?.id ?? "new") : null;
+  const [syncedKey, setSyncedKey] = useState<string | null>(null);
+  if (syncKey !== syncedKey) {
+    setSyncedKey(syncKey);
     if (isOpen) {
       setRepeatable(task ? task.repeatable !== false : true);
       setTimerMode(task?.timerMode ?? "stopwatch");
-      setTimeout(() => titleRef.current?.focus(), 60);
+    }
+  }
+
+  // Focus the title field shortly after opening (side effect, not state).
+  useEffect(() => {
+    if (isOpen) {
+      const id = setTimeout(() => titleRef.current?.focus(), 60);
+      return () => clearTimeout(id);
     }
   }, [isOpen, task]);
 

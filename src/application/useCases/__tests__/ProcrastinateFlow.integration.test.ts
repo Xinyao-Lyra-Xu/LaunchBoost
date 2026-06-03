@@ -10,7 +10,7 @@
  * 12  – procrastinated task is NOT marked completed (active stays true)
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { ProcrastinateTaskUseCase } from "../ProcrastinateTaskUseCase";
 import { SplitTaskUseCase } from "../SplitTaskUseCase";
 import { SpinWheelUseCase } from "../SpinWheelUseCase";
@@ -195,7 +195,7 @@ describe("Scenario 10 – state persists across simulated reload", () => {
   });
 
   it("spin still blocked after reload when subtasks still active", async () => {
-    const { procrastinate, split, taskRepo, roundStateRepo, spin } = makeFlow();
+    const { procrastinate, split, taskRepo, roundStateRepo } = makeFlow();
     await procrastinate.execute("t1");
     await split.confirmSplit("t1", [{ title: "Sub A", estimatedMinutes: 10 }]);
     // Create a fresh SpinWheelUseCase using the same repos (simulating reload)
