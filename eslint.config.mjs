@@ -5,9 +5,8 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    // Build output, deps, and the legacy renderer (slated for removal in the
-    // architecture migration) are not linted.
-    ignores: ["dist/**", "node_modules/**", "renderer.js"],
+    // Build output, deps, and the local-only eval preview harness are not linted.
+    ignores: ["dist/**", "node_modules/**", "eval-server.cjs"],
   },
 
   // TypeScript / React source — the code we keep and grow.

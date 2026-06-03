@@ -47,5 +47,10 @@ screenshot*.png
 renderer-debug.log
 electron_output.txt
 
+# local-only eval preview harness (browser preview without Electron)
+eval.html
+eval-server.cjs
+.claude/launch.json
+
 # local config with secrets
 config.json

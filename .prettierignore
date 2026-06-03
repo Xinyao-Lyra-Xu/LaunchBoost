@@ -2,8 +2,10 @@ node_modules/
 dist/
 build/
 package-lock.json
-renderer.js
 styles.css
-index.html
 *.png
 *.log
+
+# local-only eval preview harness
+eval.html
+eval-server.cjs
