@@ -56,8 +56,12 @@ export function RewardEditor({ isOpen, reward, onClose, onSave }: RewardEditorPr
           </div>
         </div>
         <div className="modal-actions">
-          <button id="reward-edit-cancel" className="btn-secondary" onClick={onClose}>取消</button>
-          <button id="reward-edit-confirm" className="btn-primary" onClick={handleConfirm}>确认</button>
+          <button id="reward-edit-cancel" className="btn-secondary" onClick={onClose}>
+            取消
+          </button>
+          <button id="reward-edit-confirm" className="btn-primary" onClick={handleConfirm}>
+            确认
+          </button>
         </div>
       </div>
     </div>

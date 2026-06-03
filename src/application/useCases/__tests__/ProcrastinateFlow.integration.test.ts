@@ -43,7 +43,16 @@ function makeFlow(extraTasks: ReturnType<typeof makeTask>[] = []) {
   const split = new SplitTaskUseCase(taskRepo, gateway, roundStateRepo);
   const spin = new SpinWheelUseCase(taskRepo, rewardRepo, roundStateRepo, historyRepo);
 
-  return { taskRepo, roundStateRepo, statsRepo, rewardRepo, historyRepo, procrastinate, split, spin };
+  return {
+    taskRepo,
+    roundStateRepo,
+    statsRepo,
+    rewardRepo,
+    historyRepo,
+    procrastinate,
+    split,
+    spin,
+  };
 }
 
 // ── Scenario 1 – state after procrastinate ────────────────────────────────────
@@ -194,7 +203,7 @@ describe("Scenario 10 – state persists across simulated reload", () => {
       taskRepo,
       new InMemoryRewardRepository(),
       roundStateRepo,
-      new InMemorySpinHistoryRepository()
+      new InMemorySpinHistoryRepository(),
     );
     await expect(reloadedSpin.execute()).rejects.toThrow("子任务");
   });

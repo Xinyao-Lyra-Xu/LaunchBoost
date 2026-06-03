@@ -43,17 +43,18 @@ export function createAppDependencies(): AppDependencies {
 
   // Use cases
   const spinWheelUseCase = new SpinWheelUseCase(
-    taskRepo, rewardRepo, roundStateRepo, spinHistoryRepo
+    taskRepo,
+    rewardRepo,
+    roundStateRepo,
+    spinHistoryRepo,
   );
-  const completeTaskUseCase = new CompleteTaskUseCase(
-    taskRepo, roundStateRepo, statsRepo
-  );
+  const completeTaskUseCase = new CompleteTaskUseCase(taskRepo, roundStateRepo, statsRepo);
   const procrastinateTaskUseCase = new ProcrastinateTaskUseCase(
-    taskRepo, roundStateRepo, statsRepo
+    taskRepo,
+    roundStateRepo,
+    statsRepo,
   );
-  const skipTaskUseCase = new SkipTaskUseCase(
-    taskRepo, roundStateRepo, statsRepo
-  );
+  const skipTaskUseCase = new SkipTaskUseCase(taskRepo, roundStateRepo, statsRepo);
   const bankRewardUseCase = new BankRewardUseCase(rewardRepo, statsRepo);
   const useRewardUseCase = new UseRewardUseCase(rewardRepo);
   const splitTaskUseCase = new SplitTaskUseCase(taskRepo, splitterGateway, roundStateRepo);
@@ -62,12 +63,14 @@ export function createAppDependencies(): AppDependencies {
   // Controllers
   const spinController = new SpinController(spinWheelUseCase);
   const taskController = new TaskController(
-    taskRepo, roundStateRepo,
-    completeTaskUseCase, procrastinateTaskUseCase, skipTaskUseCase, resetRoundUseCase
+    taskRepo,
+    roundStateRepo,
+    completeTaskUseCase,
+    procrastinateTaskUseCase,
+    skipTaskUseCase,
+    resetRoundUseCase,
   );
-  const rewardController = new RewardController(
-    rewardRepo, bankRewardUseCase, useRewardUseCase
-  );
+  const rewardController = new RewardController(rewardRepo, bankRewardUseCase, useRewardUseCase);
   const splitTaskController = new SplitTaskController(splitTaskUseCase);
 
   return {

@@ -72,10 +72,9 @@ declare global {
     api: {
       loadData(): Promise<PersistedData>;
       saveData(data: PersistedData): Promise<boolean>;
-      splitTask(input: SplitTaskRequest): Promise<
-        | { subtasks: SubtaskData[]; error?: never }
-        | { error: string; subtasks?: never }
-      >;
+      splitTask(
+        input: SplitTaskRequest,
+      ): Promise<{ subtasks: SubtaskData[]; error?: never } | { error: string; subtasks?: never }>;
     };
   }
 }

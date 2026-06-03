@@ -10,18 +10,12 @@ export function bumpStats(
   stats: AppStats,
   todayKey: keyof Pick<
     AppStats,
-    | "completedToday"
-    | "procrastinatedToday"
-    | "skippedToday"
-    | "rewardsBankedToday"
+    "completedToday" | "procrastinatedToday" | "skippedToday" | "rewardsBankedToday"
   >,
   totalKey: keyof Pick<
     AppStats,
-    | "totalCompleted"
-    | "totalProcrastinated"
-    | "totalSkipped"
-    | "totalRewardsBanked"
-  >
+    "totalCompleted" | "totalProcrastinated" | "totalSkipped" | "totalRewardsBanked"
+  >,
 ): AppStats {
   const today = getTodayKey();
   let s: AppStats = stats;

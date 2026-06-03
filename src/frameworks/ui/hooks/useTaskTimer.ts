@@ -22,7 +22,7 @@ export function useTaskTimer(
   active: boolean,
   timerMode: TimerMode,
   countdownSeconds: number,
-  resetKey: string
+  resetKey: string,
 ): TaskTimerResult {
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);

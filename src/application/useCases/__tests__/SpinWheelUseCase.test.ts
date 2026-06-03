@@ -9,18 +9,16 @@ import {
   makeRoundState,
 } from "./testHelpers";
 
-function makeDeps(overrides: {
-  tasks?: ReturnType<typeof makeTask>[];
-  roundState?: Partial<Parameters<typeof makeRoundState>[0]>;
-  rewards?: never[];
-} = {}) {
-  const taskRepo = new InMemoryTaskRepository(
-    overrides.tasks ?? [makeTask({ id: "t1" })]
-  );
+function makeDeps(
+  overrides: {
+    tasks?: ReturnType<typeof makeTask>[];
+    roundState?: Partial<Parameters<typeof makeRoundState>[0]>;
+    rewards?: never[];
+  } = {},
+) {
+  const taskRepo = new InMemoryTaskRepository(overrides.tasks ?? [makeTask({ id: "t1" })]);
   const rewardRepo = new InMemoryRewardRepository(overrides.rewards ?? []);
-  const roundStateRepo = new InMemoryRoundStateRepository(
-    makeRoundState(overrides.roundState)
-  );
+  const roundStateRepo = new InMemoryRoundStateRepository(makeRoundState(overrides.roundState));
   const historyRepo = new InMemorySpinHistoryRepository();
   const useCase = new SpinWheelUseCase(taskRepo, rewardRepo, roundStateRepo, historyRepo);
   return { taskRepo, rewardRepo, roundStateRepo, historyRepo, useCase };

@@ -8,7 +8,11 @@ import type { RewardRepository } from "../../ports/RewardRepository";
 import type { RoundStateRepository } from "../../ports/RoundStateRepository";
 import type { SpinHistoryRepository } from "../../ports/SpinHistoryRepository";
 import type { StatsRepository } from "../../ports/StatsRepository";
-import type { TaskSplitterGateway, SplitTaskInput, SplitTaskOutput } from "../../ports/TaskSplitterGateway";
+import type {
+  TaskSplitterGateway,
+  SplitTaskInput,
+  SplitTaskOutput,
+} from "../../ports/TaskSplitterGateway";
 
 export function makeRoundState(overrides: Partial<RoundState> = {}): RoundState {
   return {
@@ -63,32 +67,50 @@ export function makeStats(overrides: Partial<AppStats> = {}): AppStats {
 
 export class InMemoryTaskRepository implements TaskRepository {
   constructor(public tasks: Task[] = []) {}
-  async getAll() { return [...this.tasks]; }
-  async saveAll(tasks: Task[]) { this.tasks = [...tasks]; }
+  async getAll() {
+    return [...this.tasks];
+  }
+  async saveAll(tasks: Task[]) {
+    this.tasks = [...tasks];
+  }
   async update(task: Task) {
     const idx = this.tasks.findIndex((t) => t.id === task.id);
     if (idx !== -1) this.tasks[idx] = { ...task };
     else this.tasks.push({ ...task });
   }
-  async addMany(tasks: Task[]) { this.tasks.push(...tasks.map((t) => ({ ...t }))); }
+  async addMany(tasks: Task[]) {
+    this.tasks.push(...tasks.map((t) => ({ ...t })));
+  }
 }
 
 export class InMemoryRoundStateRepository implements RoundStateRepository {
   constructor(public state: RoundState = makeRoundState()) {}
-  async get() { return { ...this.state }; }
-  async save(state: RoundState) { this.state = { ...state }; }
+  async get() {
+    return { ...this.state };
+  }
+  async save(state: RoundState) {
+    this.state = { ...state };
+  }
 }
 
 export class InMemoryStatsRepository implements StatsRepository {
   constructor(public stats: AppStats = makeStats()) {}
-  async get() { return { ...this.stats }; }
-  async save(stats: AppStats) { this.stats = { ...stats }; }
+  async get() {
+    return { ...this.stats };
+  }
+  async save(stats: AppStats) {
+    this.stats = { ...stats };
+  }
 }
 
 export class InMemoryRewardRepository implements RewardRepository {
   constructor(public rewards: Reward[] = []) {}
-  async getAll() { return [...this.rewards]; }
-  async saveAll(rewards: Reward[]) { this.rewards = [...rewards]; }
+  async getAll() {
+    return [...this.rewards];
+  }
+  async saveAll(rewards: Reward[]) {
+    this.rewards = [...rewards];
+  }
   async update(reward: Reward) {
     const idx = this.rewards.findIndex((r) => r.id === reward.id);
     if (idx !== -1) this.rewards[idx] = { ...reward };
@@ -98,8 +120,12 @@ export class InMemoryRewardRepository implements RewardRepository {
 
 export class InMemorySpinHistoryRepository implements SpinHistoryRepository {
   private history: SpinResult[] = [];
-  async getAll() { return [...this.history]; }
-  async add(result: SpinResult) { this.history.push(result); }
+  async getAll() {
+    return [...this.history];
+  }
+  async add(result: SpinResult) {
+    this.history.push(result);
+  }
   async update(result: SpinResult) {
     const idx = this.history.findIndex((r) => r.id === result.id);
     if (idx !== -1) this.history[idx] = result;

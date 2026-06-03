@@ -98,11 +98,7 @@ export function parseTaskInput(input: string): ParsedTask {
 
 // ── Template builder ─────────────────────────────────────────────────────────
 
-function task(
-  title: string,
-  estimatedMinutes: number,
-  category: TaskCategory
-): GeneratedTask {
+function task(title: string, estimatedMinutes: number, category: TaskCategory): GeneratedTask {
   return { title, estimatedMinutes, difficulty: "easy", category };
 }
 
@@ -127,7 +123,7 @@ export function splitByTemplate(parsedTask: ParsedTask): SplitTaskOutput {
       starterTask = task(
         fill("拿好 iPad、电脑、笔记，并打开 {target} 的教材/PPT", tgt),
         3,
-        category
+        category,
       );
       subtasks = [
         task(fill("快速浏览 {target} 的标题和小节", tgt), 5, category),
@@ -168,11 +164,7 @@ export function splitByTemplate(parsedTask: ParsedTask): SplitTaskOutput {
       break;
 
     case "assignment":
-      starterTask = task(
-        fill("打开 {target} 文件，找到要求和第一道题", tgt),
-        3,
-        category
-      );
+      starterTask = task(fill("打开 {target} 文件，找到要求和第一道题", tgt), 3, category);
       subtasks = [
         task(fill("快速读一遍 {target} 的要求", tgt), 5, category),
         task("列出需要完成的小部分", 5, category),

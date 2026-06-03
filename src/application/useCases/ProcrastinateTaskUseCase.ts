@@ -16,7 +16,7 @@ export class ProcrastinateTaskUseCase {
   constructor(
     private taskRepo: TaskRepository,
     private roundStateRepo: RoundStateRepository,
-    private statsRepo: StatsRepository
+    private statsRepo: StatsRepository,
   ) {}
 
   async execute(taskId: string): Promise<ProcrastinateTaskOutput> {
@@ -34,11 +34,7 @@ export class ProcrastinateTaskUseCase {
     // Every procrastinated task must be split before the next spin.
     roundState.pendingSplitTaskId = taskId;
 
-    const updatedStats = bumpStats(
-      stats,
-      "procrastinatedToday",
-      "totalProcrastinated"
-    );
+    const updatedStats = bumpStats(stats, "procrastinatedToday", "totalProcrastinated");
 
     await this.taskRepo.update(task);
     await this.statsRepo.save(updatedStats);

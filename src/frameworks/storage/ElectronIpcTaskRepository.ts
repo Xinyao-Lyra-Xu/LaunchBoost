@@ -63,9 +63,7 @@ export class ElectronIpcTaskRepository implements TaskRepository {
     data.tasks = tasks.map((t) => {
       const prev = prevMap.get(t.id);
       const p = toPersistedTask(t);
-      return prev
-        ? { ...p, completed: prev.completed, activeInCurrentRound: t.active }
-        : p;
+      return prev ? { ...p, completed: prev.completed, activeInCurrentRound: t.active } : p;
     });
     await dataStore.save(data);
   }

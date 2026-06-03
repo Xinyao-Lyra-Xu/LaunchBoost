@@ -64,8 +64,8 @@ export function StatsPanel({ vm }: StatsPanelProps) {
           </div>
         </div>
         <div className="stats-total">
-          累计: 完成 {vm.totalCompleted} · 拖延 {vm.totalProcrastinated} · 跳过{" "}
-          {vm.totalSkipped} · 存奖 {vm.totalRewardsBanked}
+          累计: 完成 {vm.totalCompleted} · 拖延 {vm.totalProcrastinated} · 跳过 {vm.totalSkipped} ·
+          存奖 {vm.totalRewardsBanked}
         </div>
       </div>
     </div>

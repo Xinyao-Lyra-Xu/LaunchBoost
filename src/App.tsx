@@ -9,9 +9,16 @@ import { BulkImportModal } from "./frameworks/ui/components/BulkImportModal";
 import { RoundProgressPanel, StatsPanel } from "./frameworks/ui/components/StatsPanel";
 
 const TASK_COLORS = [
-  "#60A5FA", "#34D399", "#A78BFA", "#F472B6",
-  "#38BDF8", "#4ADE80", "#C084FC", "#FB923C",
-  "#2DD4BF", "#E879F9",
+  "#60A5FA",
+  "#34D399",
+  "#A78BFA",
+  "#F472B6",
+  "#38BDF8",
+  "#4ADE80",
+  "#C084FC",
+  "#FB923C",
+  "#2DD4BF",
+  "#E879F9",
 ];
 
 export default function App() {
@@ -21,7 +28,7 @@ export default function App() {
     (t) =>
       t.active &&
       !app.roundState.completedTaskIdsThisRound.includes(t.id) &&
-      !app.roundState.skippedTaskIdsThisRound.includes(t.id)
+      !app.roundState.skippedTaskIdsThisRound.includes(t.id),
   ).length;
   const completedTasks = app.roundState.completedTaskIdsThisRound.length;
 
@@ -30,10 +37,10 @@ export default function App() {
   const spinBlockReason = activeTaskId
     ? "请先完成当前任务后再转动"
     : pendingSplitTaskId
-    ? "请先完成任务拆解后再转动"
-    : app.hasBlockingSubtasks
-    ? "请先完成所有子任务后再转动（勾选任务列表中的子任务）"
-    : undefined;
+      ? "请先完成任务拆解后再转动"
+      : app.hasBlockingSubtasks
+        ? "请先完成所有子任务后再转动（勾选任务列表中的子任务）"
+        : undefined;
   const canSpin =
     app.wheelSegments.length > 0 &&
     !app.isSpinning &&
@@ -65,9 +72,7 @@ export default function App() {
       {/* ── Right: Control Panel ── */}
       <div className="control-section">
         {/* Round Progress */}
-        {app.statsVM && (
-          <RoundProgressPanel vm={app.statsVM} onReset={app.resetRound} />
-        )}
+        {app.statsVM && <RoundProgressPanel vm={app.statsVM} onReset={app.resetRound} />}
 
         {/* Rewards */}
         <RewardBank
@@ -88,11 +93,7 @@ export default function App() {
               >
                 批量导入
               </button>
-              <button
-                id="add-task-btn"
-                className="add-btn"
-                onClick={() => app.openTaskEdit(null)}
-              >
+              <button id="add-task-btn" className="add-btn" onClick={() => app.openTaskEdit(null)}>
                 ＋ 添加
               </button>
             </div>
@@ -121,17 +122,12 @@ export default function App() {
                   <div className="task-info">
                     <span className="task-name">{item.title}</span>
                     <span className="task-meta">
-                      <span
-                        className="task-tag"
-                        style={{ color: item.difficultyColor }}
-                      >
+                      <span className="task-tag" style={{ color: item.difficultyColor }}>
                         {item.difficultyLabel}
                       </span>
                       <span className="task-tag">{item.categoryLabel}</span>
                       <span className="task-tag">{item.estimatedMinutes}分</span>
-                      {item.isOneTime && (
-                        <span className="task-tag once-tag">一次性</span>
-                      )}
+                      {item.isOneTime && <span className="task-tag once-tag">一次性</span>}
                     </span>
                   </div>
                   <div className="task-actions">
@@ -171,11 +167,7 @@ export default function App() {
         <div className="panel">
           <div className="panel-header">
             <h2>📖 规则说明</h2>
-            <button
-              id="rules-toggle-btn"
-              className="toggle-btn"
-              onClick={app.toggleRules}
-            >
+            <button id="rules-toggle-btn" className="toggle-btn" onClick={app.toggleRules}>
               {app.rulesOpen ? "▼" : "▶"}
             </button>
           </div>

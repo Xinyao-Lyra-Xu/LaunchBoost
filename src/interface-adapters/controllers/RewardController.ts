@@ -7,7 +7,7 @@ export class RewardController {
   constructor(
     private rewardRepo: RewardRepository,
     private bankRewardUseCase: BankRewardUseCase,
-    private useRewardUseCase: UseRewardUseCase
+    private useRewardUseCase: UseRewardUseCase,
   ) {}
 
   async bankReward(rewardId: string) {

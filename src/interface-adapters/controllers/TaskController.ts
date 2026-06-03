@@ -27,7 +27,7 @@ export class TaskController {
     private completeTaskUseCase: CompleteTaskUseCase,
     private procrastinateTaskUseCase: ProcrastinateTaskUseCase,
     private skipTaskUseCase: SkipTaskUseCase,
-    private resetRoundUseCase: ResetRoundUseCase
+    private resetRoundUseCase: ResetRoundUseCase,
   ) {}
 
   async completeTask(taskId: string) {
@@ -76,7 +76,12 @@ export class TaskController {
   }
 
   async bulkImport(
-    items: Array<{ title: string; category: TaskCategory; difficulty: TaskDifficulty; estimatedMinutes: number }>
+    items: Array<{
+      title: string;
+      category: TaskCategory;
+      difficulty: TaskDifficulty;
+      estimatedMinutes: number;
+    }>,
   ): Promise<Task[]> {
     const newTasks: Task[] = items.map((item) => ({
       id: crypto.randomUUID(),
@@ -103,7 +108,7 @@ export class TaskController {
     const isCompleted = roundState.completedTaskIdsThisRound.includes(id);
     if (isCompleted) {
       roundState.completedTaskIdsThisRound = roundState.completedTaskIdsThisRound.filter(
-        (tid) => tid !== id
+        (tid) => tid !== id,
       );
       task.active = true;
     } else {
@@ -112,10 +117,7 @@ export class TaskController {
       if (!task.repeatable) task.active = false;
     }
 
-    await Promise.all([
-      this.taskRepo.update(task),
-      this.roundStateRepo.save(roundState),
-    ]);
+    await Promise.all([this.taskRepo.update(task), this.roundStateRepo.save(roundState)]);
     return task;
   }
 }

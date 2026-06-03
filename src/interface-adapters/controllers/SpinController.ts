@@ -1,4 +1,7 @@
-import type { SpinWheelUseCase, SpinWheelOutput } from "../../application/useCases/SpinWheelUseCase";
+import type {
+  SpinWheelUseCase,
+  SpinWheelOutput,
+} from "../../application/useCases/SpinWheelUseCase";
 
 export class SpinController {
   constructor(private spinWheelUseCase: SpinWheelUseCase) {}

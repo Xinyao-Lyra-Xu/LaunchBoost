@@ -21,7 +21,7 @@ export class CompleteTaskUseCase {
   constructor(
     private taskRepo: TaskRepository,
     private roundStateRepo: RoundStateRepository,
-    private statsRepo: StatsRepository
+    private statsRepo: StatsRepository,
   ) {}
 
   async execute(taskId: string): Promise<CompleteTaskOutput> {

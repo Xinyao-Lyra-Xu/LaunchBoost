@@ -10,10 +10,7 @@ export class SplitTaskController {
     return result.subtasks;
   }
 
-  async confirmSplit(
-    originalTaskId: string,
-    subtasks: SubtaskData[]
-  ): Promise<Task[]> {
+  async confirmSplit(originalTaskId: string, subtasks: SubtaskData[]): Promise<Task[]> {
     return this.splitTaskUseCase.confirmSplit(originalTaskId, subtasks);
   }
 }

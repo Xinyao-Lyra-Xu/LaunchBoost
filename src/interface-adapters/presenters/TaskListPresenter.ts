@@ -1,15 +1,19 @@
 import type { Task } from "../../domain/entities/Task";
 import type { RoundState } from "../../domain/entities/RoundState";
 import { CATEGORY_LABELS } from "../../domain/valueObjects/TaskCategory";
-import {
-  DIFFICULTY_LABELS,
-  DIFFICULTY_COLORS,
-} from "../../domain/valueObjects/TaskDifficulty";
+import { DIFFICULTY_LABELS, DIFFICULTY_COLORS } from "../../domain/valueObjects/TaskDifficulty";
 
 const TASK_COLORS = [
-  "#60A5FA", "#34D399", "#A78BFA", "#F472B6",
-  "#38BDF8", "#4ADE80", "#C084FC", "#FB923C",
-  "#2DD4BF", "#E879F9",
+  "#60A5FA",
+  "#34D399",
+  "#A78BFA",
+  "#F472B6",
+  "#38BDF8",
+  "#4ADE80",
+  "#C084FC",
+  "#FB923C",
+  "#2DD4BF",
+  "#E879F9",
 ];
 
 export interface TaskListItem {
@@ -25,10 +29,7 @@ export interface TaskListItem {
   isOneTime: boolean;
 }
 
-export function toTaskListItems(
-  tasks: Task[],
-  roundState: RoundState
-): TaskListItem[] {
+export function toTaskListItems(tasks: Task[], roundState: RoundState): TaskListItem[] {
   return tasks.map((t, i) => {
     const isCompleted = roundState.completedTaskIdsThisRound.includes(t.id);
     const isSkipped = roundState.skippedTaskIdsThisRound.includes(t.id);

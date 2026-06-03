@@ -19,17 +19,14 @@ export function toStatsViewModel(input: {
     allActive.filter(
       (t) =>
         !roundState.completedTaskIdsThisRound.includes(t.id) &&
-        !roundState.skippedTaskIdsThisRound.includes(t.id)
+        !roundState.skippedTaskIdsThisRound.includes(t.id),
     ).length;
   const activeTasks = allActive.filter(
     (t) =>
       !roundState.completedTaskIdsThisRound.includes(t.id) &&
-      !roundState.skippedTaskIdsThisRound.includes(t.id)
+      !roundState.skippedTaskIdsThisRound.includes(t.id),
   ).length;
-  const pct =
-    totalThisRound > 0
-      ? Math.round((completedThisRound / totalThisRound) * 100)
-      : 0;
+  const pct = totalThisRound > 0 ? Math.round((completedThisRound / totalThisRound) * 100) : 0;
 
   return {
     completedToday: stats.completedToday,
