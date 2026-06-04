@@ -72,6 +72,12 @@ export interface PersistedData {
   meta: PersistedMeta;
 }
 
+export interface ApiKeyStatus {
+  hasKey: boolean;
+  source: "env" | "encrypted" | "config" | "none";
+  encryptionAvailable: boolean;
+}
+
 declare global {
   interface Window {
     api: {
@@ -80,6 +86,9 @@ declare global {
       splitTask(
         input: SplitTaskRequest,
       ): Promise<{ subtasks: SubtaskData[]; error?: never } | { error: string; subtasks?: never }>;
+      logError(message: string): Promise<boolean>;
+      getApiKeyStatus(): Promise<ApiKeyStatus>;
+      setApiKey(key: string): Promise<{ ok: boolean; error?: string }>;
     };
   }
 }

@@ -9,6 +9,7 @@ import { BulkImportModal } from "./frameworks/ui/components/BulkImportModal";
 import { RoundProgressPanel, StatsPanel } from "./frameworks/ui/components/StatsPanel";
 import { AchievementsPanel } from "./frameworks/ui/components/AchievementsPanel";
 import { SubtaskFocusModal } from "./frameworks/ui/components/SubtaskFocusModal";
+import { SettingsModal } from "./frameworks/ui/components/SettingsModal";
 
 const TASK_COLORS = [
   "#60A5FA",
@@ -53,6 +54,29 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Settings entry */}
+      <button
+        id="settings-btn"
+        title="设置"
+        onClick={app.openSettings}
+        style={{
+          position: "fixed",
+          top: 12,
+          right: 16,
+          zIndex: 50,
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 8,
+          color: "#cbd5e1",
+          fontSize: 18,
+          width: 36,
+          height: 36,
+          cursor: "pointer",
+        }}
+      >
+        ⚙️
+      </button>
+
       {/* ── Left: Wheel ── */}
       <SpinnerWheel
         segments={app.wheelSegments}
@@ -272,6 +296,13 @@ export default function App() {
         stepTotal={app.focusStepTotal}
         onCompleteStep={app.completeFocusStep}
         onClose={app.closeFocus}
+      />
+
+      <SettingsModal
+        isOpen={app.settingsOpen}
+        status={app.apiKeyStatus}
+        onClose={app.closeSettings}
+        onSaveKey={app.saveApiKey}
       />
     </div>
   );

@@ -19,6 +19,7 @@ import type { TaskListItem } from "../../../interface-adapters/presenters/TaskLi
 import type { RewardBankViewModel } from "../../../interface-adapters/viewModels/RewardBankViewModel";
 import type { StatsViewModel } from "../../../interface-adapters/viewModels/StatsViewModel";
 import type { AchievementsViewModel } from "../../../interface-adapters/viewModels/AchievementsViewModel";
+import type { ApiKeyStatus } from "../../../electron";
 
 export type SplitModalState = "choice" | "loading" | "results" | "error" | "manual";
 
@@ -61,6 +62,8 @@ export interface SpinnerAppHook {
   splitErrorMsg: string;
   bulkImportOpen: boolean;
   rulesOpen: boolean;
+  settingsOpen: boolean;
+  apiKeyStatus: ApiKeyStatus | null;
   // Handlers
   spin(): void;
   onSpinComplete(normalizedRotation: number): void;
@@ -93,6 +96,9 @@ export interface SpinnerAppHook {
     lines: Array<{ title: string; category: string; difficulty: string; estimatedMinutes: number }>,
   ): void;
   toggleRules(): void;
+  openSettings(): void;
+  closeSettings(): void;
+  saveApiKey(key: string): void;
   showToast(msg: string): void;
 }
 
@@ -189,6 +195,8 @@ export function useSpinnerApp(): SpinnerAppHook {
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
 
   // Ref to current winner at spin time (safe across async/timeout)
   const winnerIdRef = useRef<string | null>(null);
@@ -211,6 +219,11 @@ export function useSpinnerApp(): SpinnerAppHook {
       // Record today as an active day and surface current achievement progress.
       const ach = await deps.achievementController.init();
       setAchievementsVM(ach.vm);
+
+      // Reflect whether an API key is configured (optional chaining keeps the
+      // browser preview harness, which lacks these bridges, from throwing).
+      const status = await window.api.getApiKeyStatus?.();
+      if (status) setApiKeyStatus(status);
 
       // Re-open the mandatory split modal if a split was interrupted (e.g. page reload).
       if (loadedRoundState.pendingSplitTaskId) {
@@ -649,6 +662,23 @@ export function useSpinnerApp(): SpinnerAppHook {
   // ── Rules ─────────────────────────────────────────────────────────────────
   const toggleRules = useCallback(() => setRulesOpen((v) => !v), []);
 
+  // ── Settings ────────────────────────────────────────────────────────────────
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const saveApiKey = useCallback(
+    async (key: string) => {
+      const res = await window.api.setApiKey(key);
+      if (!res.ok) {
+        showToast("保存失败：" + (res.error ?? "未知错误"));
+        return;
+      }
+      const status = await window.api.getApiKeyStatus();
+      setApiKeyStatus(status);
+      showToast(key ? "API 密钥已加密保存 🔒" : "API 密钥已清除");
+    },
+    [showToast],
+  );
+
   return {
     tasks,
     rewards,
@@ -682,6 +712,8 @@ export function useSpinnerApp(): SpinnerAppHook {
     splitErrorMsg,
     bulkImportOpen,
     rulesOpen,
+    settingsOpen,
+    apiKeyStatus,
     spin,
     onSpinComplete,
     completeTask,
@@ -711,6 +743,9 @@ export function useSpinnerApp(): SpinnerAppHook {
     closeBulkImport,
     confirmBulkImport,
     toggleRules,
+    openSettings,
+    closeSettings,
+    saveApiKey,
     showToast,
   };
 }
