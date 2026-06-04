@@ -8,6 +8,7 @@ import { SplitTaskModal } from "./frameworks/ui/components/SplitTaskModal";
 import { BulkImportModal } from "./frameworks/ui/components/BulkImportModal";
 import { RoundProgressPanel, StatsPanel } from "./frameworks/ui/components/StatsPanel";
 import { AchievementsPanel } from "./frameworks/ui/components/AchievementsPanel";
+import { SubtaskFocusModal } from "./frameworks/ui/components/SubtaskFocusModal";
 
 const TASK_COLORS = [
   "#60A5FA",
@@ -25,13 +26,8 @@ const TASK_COLORS = [
 export default function App() {
   const app = useSpinnerApp();
 
-  const activeTasks = app.tasks.filter(
-    (t) =>
-      t.active &&
-      !app.roundState.completedTaskIdsThisRound.includes(t.id) &&
-      !app.roundState.skippedTaskIdsThisRound.includes(t.id),
-  ).length;
-  const completedTasks = app.roundState.completedTaskIdsThisRound.length;
+  const activeTasks = app.statsVM?.roundActiveTasks ?? 0;
+  const completedTasks = app.statsVM?.roundCompletedCount ?? 0;
 
   const pendingSplitTaskId = app.roundState.pendingSplitTaskId ?? null;
   const activeTaskId = app.roundState.activeTaskId ?? null;
@@ -40,7 +36,7 @@ export default function App() {
     : pendingSplitTaskId
       ? "请先完成任务拆解后再转动"
       : app.hasBlockingSubtasks
-        ? "请先完成所有子任务后再转动（勾选任务列表中的子任务）"
+        ? "请先在专注界面完成当前任务链后再转动（点右侧「继续 →」）"
         : undefined;
   const canSpin =
     app.wheelSegments.length > 0 &&
@@ -72,6 +68,22 @@ export default function App() {
 
       {/* ── Right: Control Panel ── */}
       <div className="control-section">
+        {/* Resume-focus banner: shown while subtasks remain and the focus view is closed */}
+        {app.hasBlockingSubtasks && !app.focusOpen && (
+          <div className="chain-banner" onClick={app.openFocus}>
+            <span className="chain-banner-icon">🎯</span>
+            <div className="chain-banner-body">
+              <div className="chain-banner-label">任务链进行中</div>
+              <div className="chain-banner-title">
+                {app.focusParentTitle} · {app.focusStepIndex}/{app.focusStepTotal}
+              </div>
+            </div>
+            <button className="chain-banner-btn" onClick={app.openFocus}>
+              继续 →
+            </button>
+          </div>
+        )}
+
         {/* Round Progress */}
         {app.statsVM && <RoundProgressPanel vm={app.statsVM} onReset={app.resetRound} />}
 
@@ -250,6 +262,16 @@ export default function App() {
         isOpen={app.bulkImportOpen}
         onClose={app.closeBulkImport}
         onImport={app.confirmBulkImport}
+      />
+
+      <SubtaskFocusModal
+        isOpen={app.focusOpen}
+        parentTitle={app.focusParentTitle}
+        current={app.focusCurrent}
+        stepIndex={app.focusStepIndex}
+        stepTotal={app.focusStepTotal}
+        onCompleteStep={app.completeFocusStep}
+        onClose={app.closeFocus}
       />
     </div>
   );

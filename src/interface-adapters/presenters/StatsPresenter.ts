@@ -12,8 +12,13 @@ export function toStatsViewModel(input: {
 }): StatsViewModel {
   const { tasks, rewards, roundState, stats } = input;
 
-  const allActive = tasks.filter((t) => t.active);
-  const completedThisRound = roundState.completedTaskIdsThisRound.length;
+  // Split subtasks are worked through the focus flow, not the wheel, so they
+  // are excluded from round accounting entirely.
+  const isSubtask = (id: string) => tasks.find((t) => t.id === id)?.parentTaskId != null;
+  const allActive = tasks.filter((t) => t.active && !t.parentTaskId);
+  const completedThisRound = roundState.completedTaskIdsThisRound.filter(
+    (id) => !isSubtask(id),
+  ).length;
   const totalThisRound =
     completedThisRound +
     allActive.filter(
