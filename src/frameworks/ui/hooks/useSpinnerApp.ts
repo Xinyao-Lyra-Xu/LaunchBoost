@@ -19,6 +19,7 @@ import type { TaskListItem } from "../../../interface-adapters/presenters/TaskLi
 import type { RewardBankViewModel } from "../../../interface-adapters/viewModels/RewardBankViewModel";
 import type { StatsViewModel } from "../../../interface-adapters/viewModels/StatsViewModel";
 import type { AchievementsViewModel } from "../../../interface-adapters/viewModels/AchievementsViewModel";
+import type { ApiKeyStatus } from "../../../electron";
 
 export type SplitModalState = "choice" | "loading" | "results" | "error" | "manual";
 
@@ -43,6 +44,12 @@ export interface SpinnerAppHook {
   consecutiveSkips: number;
   // Blocking state
   hasBlockingSubtasks: boolean;
+  // Subtask focus chain
+  focusOpen: boolean;
+  focusCurrent: Task | null;
+  focusParentTitle: string;
+  focusStepIndex: number;
+  focusStepTotal: number;
   // Modals
   taskEditOpen: boolean;
   taskBeingEdited: Task | null;
@@ -55,11 +62,16 @@ export interface SpinnerAppHook {
   splitErrorMsg: string;
   bulkImportOpen: boolean;
   rulesOpen: boolean;
+  settingsOpen: boolean;
+  apiKeyStatus: ApiKeyStatus | null;
   // Handlers
   spin(): void;
   onSpinComplete(normalizedRotation: number): void;
   completeTask(focusMinutes?: number): void;
   procrastinateTask(): void;
+  openFocus(): void;
+  closeFocus(): void;
+  completeFocusStep(): void;
   skipTask(): void;
   useRewardNow(): void;
   bankReward(): void;
@@ -84,6 +96,9 @@ export interface SpinnerAppHook {
     lines: Array<{ title: string; category: string; difficulty: string; estimatedMinutes: number }>,
   ): void;
   toggleRules(): void;
+  openSettings(): void;
+  closeSettings(): void;
+  saveApiKey(key: string): void;
   showToast(msg: string): void;
 }
 
@@ -179,6 +194,9 @@ export function useSpinnerApp(): SpinnerAppHook {
   const [splitErrorMsg, setSplitErrorMsg] = useState("");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus | null>(null);
 
   // Ref to current winner at spin time (safe across async/timeout)
   const winnerIdRef = useRef<string | null>(null);
@@ -201,6 +219,11 @@ export function useSpinnerApp(): SpinnerAppHook {
       // Record today as an active day and surface current achievement progress.
       const ach = await deps.achievementController.init();
       setAchievementsVM(ach.vm);
+
+      // Reflect whether an API key is configured (optional chaining keeps the
+      // browser preview harness, which lacks these bridges, from throwing).
+      const status = await window.api.getApiKeyStatus?.();
+      if (status) setApiKeyStatus(status);
 
       // Re-open the mandatory split modal if a split was interrupted (e.g. page reload).
       if (loadedRoundState.pendingSplitTaskId) {
@@ -246,7 +269,16 @@ export function useSpinnerApp(): SpinnerAppHook {
     [shuffledWheelItems],
   );
 
-  const taskListItems = useMemo(() => toTaskListItems(tasks, roundState), [tasks, roundState]);
+  // Subtasks are driven through the focus view, not the list, so they are
+  // hidden here.
+  const taskListItems = useMemo(
+    () =>
+      toTaskListItems(
+        tasks.filter((t) => !t.parentTaskId),
+        roundState,
+      ),
+    [tasks, roundState],
+  );
 
   const rewardBankVM = useMemo(() => toRewardBankViewModel(rewards), [rewards]);
 
@@ -260,6 +292,25 @@ export function useSpinnerApp(): SpinnerAppHook {
     () => tasks.some((t) => t.active && t.parentTaskId != null),
     [tasks],
   );
+
+  // The subtask chain to focus on: the first unfinished subtask plus its
+  // parent's progress. Only one chain is ever active at a time (spinning is
+  // blocked while subtasks remain).
+  const focusCurrent = useMemo(
+    () => tasks.find((t) => t.active && t.parentTaskId != null) ?? null,
+    [tasks],
+  );
+  const { focusParentTitle, focusStepIndex, focusStepTotal } = useMemo(() => {
+    const parentId = focusCurrent?.parentTaskId;
+    if (!parentId) return { focusParentTitle: "", focusStepIndex: 0, focusStepTotal: 0 };
+    const siblings = tasks.filter((t) => t.parentTaskId === parentId);
+    const parent = tasks.find((t) => t.id === parentId);
+    return {
+      focusParentTitle: parent?.title ?? "已拆解任务",
+      focusStepIndex: siblings.filter((t) => !t.active).length + 1,
+      focusStepTotal: siblings.length,
+    };
+  }, [tasks, focusCurrent]);
 
   // ── Toast ─────────────────────────────────────────────────────────────────
   const showToast = useCallback((msg: string) => {
@@ -520,10 +571,38 @@ export function useSpinnerApp(): SpinnerAppHook {
       await reloadAll();
       setSplitOpen(false);
       setTaskBeingSplit(null);
-      showToast(`已拆解为 ${newTasks.length} 个子任务，请逐一完成后再转盘 ✂️`);
+      // Jump straight into the focus view to work the first step.
+      setFocusOpen(true);
+      showToast(`已拆解为 ${newTasks.length} 个步骤，开始专注完成 🎯`);
     },
     [taskBeingSplit, reloadAll, showToast],
   );
+
+  // ── Subtask focus chain ─────────────────────────────────────────────────────
+  const openFocus = useCallback(() => setFocusOpen(true), []);
+  const closeFocus = useCallback(() => setFocusOpen(false), []);
+
+  // Completes the current step (the first unfinished subtask). When the last
+  // step is done, closes the focus view and unblocks spinning.
+  const completeFocusStep = useCallback(async () => {
+    const before = await deps.taskRepo.getAll();
+    const current = before.find((t) => t.active && t.parentTaskId != null);
+    if (!current) {
+      setFocusOpen(false);
+      return;
+    }
+    await deps.taskController.toggleTask(current.id);
+    const [allTasks, rs] = await Promise.all([deps.taskRepo.getAll(), deps.roundStateRepo.get()]);
+    setTasks(allTasks);
+    setRoundState(rs);
+
+    const remaining = allTasks.filter((t) => t.active && t.parentTaskId != null);
+    if (remaining.length === 0) {
+      setFocusOpen(false);
+      showToast("任务链全部完成！可以继续转盘了 🎉");
+      void refreshAchievements();
+    }
+  }, [showToast, refreshAchievements]);
 
   // Goes back to the choice screen — split is mandatory, so no full cancel.
   const rejectAiSplit = useCallback(() => {
@@ -583,6 +662,23 @@ export function useSpinnerApp(): SpinnerAppHook {
   // ── Rules ─────────────────────────────────────────────────────────────────
   const toggleRules = useCallback(() => setRulesOpen((v) => !v), []);
 
+  // ── Settings ────────────────────────────────────────────────────────────────
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const saveApiKey = useCallback(
+    async (key: string) => {
+      const res = await window.api.setApiKey(key);
+      if (!res.ok) {
+        showToast("保存失败：" + (res.error ?? "未知错误"));
+        return;
+      }
+      const status = await window.api.getApiKeyStatus();
+      setApiKeyStatus(status);
+      showToast(key ? "API 密钥已加密保存 🔒" : "API 密钥已清除");
+    },
+    [showToast],
+  );
+
   return {
     tasks,
     rewards,
@@ -600,6 +696,11 @@ export function useSpinnerApp(): SpinnerAppHook {
     skipCardProgress: roundState.skipCardProgress,
     consecutiveSkips: roundState.consecutiveSkips,
     hasBlockingSubtasks,
+    focusOpen,
+    focusCurrent,
+    focusParentTitle,
+    focusStepIndex,
+    focusStepTotal,
     taskEditOpen,
     taskBeingEdited,
     rewardEditOpen,
@@ -611,10 +712,15 @@ export function useSpinnerApp(): SpinnerAppHook {
     splitErrorMsg,
     bulkImportOpen,
     rulesOpen,
+    settingsOpen,
+    apiKeyStatus,
     spin,
     onSpinComplete,
     completeTask,
     procrastinateTask,
+    openFocus,
+    closeFocus,
+    completeFocusStep,
     skipTask,
     useRewardNow,
     bankReward,
@@ -637,6 +743,9 @@ export function useSpinnerApp(): SpinnerAppHook {
     closeBulkImport,
     confirmBulkImport,
     toggleRules,
+    openSettings,
+    closeSettings,
+    saveApiKey,
     showToast,
   };
 }

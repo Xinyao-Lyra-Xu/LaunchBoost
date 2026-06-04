@@ -67,7 +67,20 @@ git push origin v1.1.0
 
 ## Configuration
 
-Task-splitting uses the Anthropic API. Provide a key via either:
+Task-splitting uses the Anthropic API. The key is read in this order:
 
-- a local `config.json` (git-ignored) — copy `config.json.example` and fill it in, or
-- the `ANTHROPIC_API_KEY` environment variable.
+1. the `ANTHROPIC_API_KEY` environment variable, else
+2. the encrypted key store, else
+3. a legacy plaintext `config.json` (auto-migrated into the encrypted store on
+   next launch).
+
+Set the key in-app via the **⚙️ settings** button (top-right). It is encrypted at
+rest with the OS keystore (Windows DPAPI) through Electron `safeStorage` — never
+written to disk in plaintext. Without a key, splitting falls back to local
+templates.
+
+## Diagnostics
+
+Uncaught errors from both the main and renderer processes are appended to a
+rotating log file at `<userData>/logs/launchboost.log` (one previous log is kept
+as `.log.1`). On Windows `<userData>` is `%APPDATA%/LaunchBoost`.

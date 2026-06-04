@@ -23,6 +23,8 @@ const REWARD_SHARE = 0.1;
  * - Tasks occupy 90 % of the wheel; rewards 10 % (when both exist).
  * - Completed or skipped tasks this round are excluded.
  * - Inactive tasks and inactive rewards are excluded.
+ * - Split subtasks (those with a parentTaskId) are excluded — they are worked
+ *   through the focus flow, not spun for.
  * - In procrastinationRecoveryMode, easy tasks are weighted higher.
  */
 export function calculateWheelItems(input: {
@@ -35,6 +37,7 @@ export function calculateWheelItems(input: {
   const activeTasks = tasks.filter(
     (t) =>
       t.active &&
+      !t.parentTaskId &&
       !roundState.completedTaskIdsThisRound.includes(t.id) &&
       !roundState.skippedTaskIdsThisRound.includes(t.id),
   );

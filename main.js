@@ -1,11 +1,61 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
 
 let dataFilePath;
 
-function loadApiKey() {
+// ── Logging ─────────────────────────────────────────────────────────────────
+// Errors from both processes are appended to a rotating log file under userData
+// so failures leave a trace without any external service.
+const MAX_LOG_BYTES = 512 * 1024;
+
+function logFilePath() {
+  return path.join(app.getPath("userData"), "logs", "launchboost.log");
+}
+
+function appendLog(level, message) {
+  try {
+    const file = logFilePath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    try {
+      if (fs.existsSync(file) && fs.statSync(file).size > MAX_LOG_BYTES) {
+        fs.renameSync(file, file + ".1"); // keep one previous log
+      }
+    } catch {
+      /* rotation is best-effort */
+    }
+    fs.appendFileSync(file, `[${new Date().toISOString()}] [${level}] ${message}\n`, "utf-8");
+  } catch {
+    /* logging must never throw */
+  }
+}
+
+process.on("uncaughtException", (err) => appendLog("main", (err && err.stack) || String(err)));
+process.on("unhandledRejection", (reason) =>
+  appendLog("main", "unhandledRejection: " + ((reason && reason.stack) || String(reason))),
+);
+
+// ── API key storage ───────────────────────────────────────────────────────────
+// The Anthropic key is encrypted at rest with the OS keystore (DPAPI on
+// Windows) via safeStorage, instead of sitting in plaintext config.json.
+function apiKeyFilePath() {
+  return path.join(app.getPath("userData"), "api-key.enc");
+}
+
+function loadEncryptedApiKey() {
+  try {
+    const file = apiKeyFilePath();
+    if (fs.existsSync(file) && safeStorage.isEncryptionAvailable()) {
+      return safeStorage.decryptString(Buffer.from(fs.readFileSync(file, "utf-8"), "base64"));
+    }
+  } catch (e) {
+    appendLog("main", "decrypt api key failed: " + ((e && e.stack) || String(e)));
+  }
+  return null;
+}
+
+function legacyConfigApiKey() {
   try {
     const cfgPath = path.join(__dirname, "config.json");
     if (fs.existsSync(cfgPath)) {
@@ -13,9 +63,49 @@ function loadApiKey() {
       if (cfg.anthropicApiKey) return cfg.anthropicApiKey;
     }
   } catch {
-    /* fall through to env */
+    /* ignore */
   }
-  return process.env.ANTHROPIC_API_KEY || null;
+  return null;
+}
+
+/** Persists (or clears, when key is falsy) the encrypted API key. */
+function saveApiKey(key) {
+  const file = apiKeyFilePath();
+  if (!key) {
+    try {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("OS 加密不可用，无法安全保存密钥");
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, safeStorage.encryptString(key).toString("base64"), "utf-8");
+}
+
+// Resolution order: env var → encrypted store → legacy plaintext config.json.
+function loadApiKey() {
+  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+  const encrypted = loadEncryptedApiKey();
+  if (encrypted) return encrypted;
+  return legacyConfigApiKey();
+}
+
+/** One-time migration: move a plaintext config.json key into the encrypted store. */
+function migrateLegacyApiKey() {
+  try {
+    if (fs.existsSync(apiKeyFilePath())) return;
+    const legacy = legacyConfigApiKey();
+    if (legacy && safeStorage.isEncryptionAvailable()) {
+      saveApiKey(legacy);
+      appendLog("main", "migrated plaintext config.json key to encrypted store");
+    }
+  } catch (e) {
+    appendLog("main", "api key migration failed: " + ((e && e.stack) || String(e)));
+  }
 }
 
 function httpsPost(options, body) {
@@ -128,9 +218,16 @@ function createWindow() {
 
   win.loadFile("index.html");
   win.once("ready-to-show", () => win.show());
+
+  win.webContents.on("render-process-gone", (_, details) =>
+    appendLog("renderer", "render-process-gone: " + JSON.stringify(details)),
+  );
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  migrateLegacyApiKey();
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -335,5 +432,36 @@ ipcMain.handle("save-data", (_, data) => {
   } catch (e) {
     console.error("Failed to save data:", e);
     return false;
+  }
+});
+
+// Renderer-reported errors land in the same log file.
+ipcMain.handle("log-error", (_, message) => {
+  appendLog("renderer", String(message));
+  return true;
+});
+
+// API key management (the key itself is never sent back to the renderer).
+ipcMain.handle("get-api-key-status", () => {
+  const source = process.env.ANTHROPIC_API_KEY
+    ? "env"
+    : loadEncryptedApiKey()
+      ? "encrypted"
+      : legacyConfigApiKey()
+        ? "config"
+        : "none";
+  return {
+    hasKey: source !== "none",
+    source,
+    encryptionAvailable: safeStorage.isEncryptionAvailable(),
+  };
+});
+
+ipcMain.handle("set-api-key", (_, key) => {
+  try {
+    saveApiKey((key || "").trim() || null);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || String(e) };
   }
 });
