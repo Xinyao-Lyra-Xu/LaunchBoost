@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSpinnerApp } from "./frameworks/ui/hooks/useSpinnerApp";
 import { SpinnerWheel } from "./frameworks/ui/components/SpinnerWheel";
 import { SpinResultModal } from "./frameworks/ui/components/SpinResultModal";
@@ -10,6 +11,10 @@ import { RoundProgressPanel, StatsPanel } from "./frameworks/ui/components/Stats
 import { AchievementsPanel } from "./frameworks/ui/components/AchievementsPanel";
 import { SubtaskFocusModal } from "./frameworks/ui/components/SubtaskFocusModal";
 import { SettingsModal } from "./frameworks/ui/components/SettingsModal";
+import { RulesPanel } from "./frameworks/ui/components/RulesPanel";
+import { OnboardingModal } from "./frameworks/ui/components/OnboardingModal";
+
+const ONBOARDING_SEEN_KEY = "launchboost.onboardingSeen";
 
 const TASK_COLORS = [
   "#60A5FA",
@@ -26,6 +31,20 @@ const TASK_COLORS = [
 
 export default function App() {
   const app = useSpinnerApp();
+
+  // First-use onboarding: show the "why the wheel works" explainer once, then
+  // gate it behind localStorage. Reopenable from the rules panel.
+  const [onboardingOpen, setOnboardingOpen] = useState(
+    () => typeof localStorage !== "undefined" && !localStorage.getItem(ONBOARDING_SEEN_KEY),
+  );
+  const closeOnboarding = () => {
+    try {
+      localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
+    } catch {
+      // ignore storage failures — worst case the modal reappears next launch
+    }
+    setOnboardingOpen(false);
+  };
 
   const activeTasks = app.statsVM?.roundActiveTasks ?? 0;
   const completedTasks = app.statsVM?.roundCompletedCount ?? 0;
@@ -204,39 +223,11 @@ export default function App() {
         {app.achievementsVM && <AchievementsPanel vm={app.achievementsVM} />}
 
         {/* Rules */}
-        <div className="panel">
-          <div className="panel-header">
-            <h2>📖 规则说明</h2>
-            <button id="rules-toggle-btn" className="toggle-btn" onClick={app.toggleRules}>
-              {app.rulesOpen ? "▼" : "▶"}
-            </button>
-          </div>
-          <div id="rules-body" className={app.rulesOpen ? "" : "hidden"}>
-            <ul className="rules-list">
-              <li>
-                任务占转盘 <strong>90%</strong> 概率，奖励占 <strong>10%</strong>
-              </li>
-              <li>
-                转到结果后必须立即选择，<strong>没有"稍后"选项</strong>
-              </li>
-              <li>
-                点「拖延了」下次转盘<strong>简单任务概率更高</strong>
-              </li>
-              <li>
-                中等/困难任务可<strong>拆分为小任务</strong>
-              </li>
-              <li>
-                每周自动重置 <strong>2 张跳过卡</strong>
-              </li>
-              <li>
-                奖励可<strong>存入奖励库</strong>留待以后使用
-              </li>
-              <li>
-                「重置本轮」只重置<strong>重复性任务</strong>
-              </li>
-            </ul>
-          </div>
-        </div>
+        <RulesPanel
+          isOpen={app.rulesOpen}
+          onToggle={app.toggleRules}
+          onShowWhy={() => setOnboardingOpen(true)}
+        />
       </div>
 
       {/* ── Modals ── */}
@@ -304,6 +295,8 @@ export default function App() {
         onClose={app.closeSettings}
         onSaveKey={app.saveApiKey}
       />
+
+      <OnboardingModal isOpen={onboardingOpen} onClose={closeOnboarding} />
     </div>
   );
 }

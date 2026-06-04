@@ -452,6 +452,40 @@ body {
   to   { transform: scale(1);    opacity: 1; }
 }
 
+.modal-content.onboarding-content {
+  background: linear-gradient(145deg, #1e1e3a 0%, #241b40 100%);
+  max-width: 440px;
+  padding: 38px 44px 30px;
+}
+
+.onboarding-body {
+  text-align: left;
+  margin: 4px 0 26px;
+}
+
+.onboarding-body p {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+
+.onboarding-body strong { color: #a78bfa; font-weight: 600; }
+
+.onboarding-punch {
+  color: var(--text-primary) !important;
+  font-weight: 600;
+  margin-bottom: 0 !important;
+}
+
+.onboarding-cite {
+  margin-top: 16px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  font-style: italic;
+}
+
 .modal-content.reward-result {
   background: linear-gradient(145deg, #1e1e3a 0%, #2d1b4e 100%);
   border-color: rgba(251, 191, 36, 0.2);
@@ -888,6 +922,40 @@ body {
 }
 
 .rules-list strong { color: var(--text-primary); }
+
+.rule-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.rule-text { flex: 1; }
+
+.rule-info-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.rule-info-btn:hover { opacity: 1; }
+.rule-info-btn.active { opacity: 1; color: #a78bfa; }
+
+.rule-note {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.75;
+  line-height: 1.55;
+  border-left: 2px solid rgba(167, 139, 250, 0.35);
+  padding-left: 8px;
+}
 
 /* ── Task / Reward Edit Modal (rich form) ── */
 .task-edit-content {
