@@ -4,7 +4,10 @@ import {
   calculateWheelItems,
   type WheelItem,
 } from "../../../domain/services/SpinnerProbabilityService";
-import { toWheelDisplayItems } from "../../../interface-adapters/presenters/SpinnerPresenter";
+import {
+  toWheelDisplayItems,
+  computeSpinTarget,
+} from "../../../interface-adapters/presenters/SpinnerPresenter";
 import { toStatsViewModel } from "../../../interface-adapters/presenters/StatsPresenter";
 import { toRewardBankViewModel } from "../../../interface-adapters/presenters/RewardBankPresenter";
 import { toTaskListItems } from "../../../interface-adapters/presenters/TaskListPresenter";
@@ -259,7 +262,19 @@ export function useSpinnerApp(): SpinnerAppHook {
   // then randomly rotates the starting position for variety each round.
   // Both rendering and spin-rotation calculation use this same array.
   // Done during render (not in an effect) to avoid a cascading re-render.
-  if (wheelItems !== arrangedFrom) {
+  //
+  // Skip re-arranging while a spin result is pending (spinning, or a winner
+  // awaiting resolution in the result modal). Resolving the result sets
+  // activeTaskId / recovery mode on roundState, which would otherwise re-shuffle
+  // the wheel and visually yank the just-landed winner out from under the
+  // pointer. Freezing here keeps it pinned until the modal is dismissed; the
+  // next allowed render re-arranges with fresh items.
+  // Exception: always do the first arrangement of a non-empty set (e.g. a
+  // reload that restores a pending active task sets currentWinnerId before the
+  // wheel has ever been arranged), otherwise the wheel would stay empty.
+  const spinResultPending = isSpinning || currentWinnerId != null;
+  const neverArranged = shuffledWheelItems.length === 0 && wheelItems.length > 0;
+  if ((!spinResultPending || neverArranged) && wheelItems !== arrangedFrom) {
     setArrangedFrom(wheelItems);
     setShuffledWheelItems(arrangeWheelItems(wheelItems));
   }
@@ -357,22 +372,13 @@ export function useSpinnerApp(): SpinnerAppHook {
 
         // Compute rotation using the shuffled display order so the pointer
         // lands on the segment that is visually rendered for the winner.
-        const totalWeight = shuffledWheelItems.reduce((s, i) => s + i.weight, 0);
-        let segStart = 0;
-        let centerDeg = 0;
-        for (const item of shuffledWheelItems) {
-          const arcDeg = (item.weight / totalWeight) * 360;
-          if (item.id === winner.id) {
-            centerDeg = segStart + arcDeg / 2;
-            break;
-          }
-          segStart += arcDeg;
-        }
-        const targetMod = (360 - centerDeg) % 360;
-        const currentMod = totalRotation % 360;
-        const delta = (targetMod - currentMod + 360) % 360;
         const fullSpins = (5 + Math.floor(Math.random() * 4)) * 360;
-        const newRotation = totalRotation + fullSpins + delta;
+        const newRotation = computeSpinTarget(
+          shuffledWheelItems,
+          winner,
+          totalRotation,
+          fullSpins,
+        );
 
         setIsSpinning(true);
         setTargetRotation(newRotation);
