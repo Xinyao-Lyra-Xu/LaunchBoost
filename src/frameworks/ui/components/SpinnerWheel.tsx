@@ -1,17 +1,18 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import type { WheelDisplayItem } from "../../../interface-adapters/viewModels/SpinnerViewModel";
 
 const DPR = window.devicePixelRatio || 1;
-const DISPLAY = 390;
-const CENTER = DISPLAY / 2;
-const RADIUS = CENTER - 6;
 
-function darken(hex: string, amount: number): string {
-  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - amount);
-  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - amount);
-  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - amount);
-  return `rgb(${r},${g},${b})`;
-}
+// Type-based palette (spec): tasks = purple, rewards = amber, dark text.
+// Adjacent same-type segments alternate base/shade so they stay distinct.
+const PALETTE = {
+  task: { fill: "#EEEDFE", fillAlt: "#DDDAF7", text: "#26215C" },
+  reward: { fill: "#FAEEDA", fillAlt: "#F2DEBC", text: "#412402" },
+} as const;
+
+const EASE_OUT_QUART = (t: number) => 1 - Math.pow(1 - t, 4);
+const TWO_PI = Math.PI * 2;
+const deg2rad = (d: number) => (d * Math.PI) / 180;
 
 /**
  * Truncates text to fit within maxWidth using a binary-search approach.
@@ -35,35 +36,38 @@ function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: num
   return lo > 0 ? text.slice(0, lo) + ellipsis : "";
 }
 
-function drawText(
+/**
+ * Draws one segment's radial label. Assumes the context is already
+ * translated to the wheel centre and rotated by the current spin angle —
+ * so text is drawn relative to origin (0,0), never skewed.
+ */
+function drawSegmentText(
   ctx: CanvasRenderingContext2D,
   text: string,
   midAngle: number,
   isReward: boolean,
   arcAngle: number,
+  radius: number,
 ) {
   // Skip segments too narrow to render any readable text.
   if (arcAngle < Math.PI / 18) return;
 
   ctx.save();
-  ctx.translate(CENTER, CENTER);
   ctx.rotate(midAngle);
 
-  const norm = ((midAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const norm = ((midAngle % TWO_PI) + TWO_PI) % TWO_PI;
   const flip = norm > Math.PI / 2 && norm < (Math.PI * 3) / 2;
 
-  ctx.fillStyle = "rgba(255,255,255,0.95)";
-  ctx.shadowColor = "rgba(0,0,0,0.6)";
-  ctx.shadowBlur = 3;
+  ctx.fillStyle = isReward ? PALETTE.reward.text : PALETTE.task.text;
 
-  // Scale font size with available arc so text never overflows its segment.
   const fontSize =
     arcAngle < Math.PI / 9 ? 9 : arcAngle < Math.PI / 6 ? 11 : arcAngle < Math.PI / 4 ? 12 : 13;
   ctx.font = `bold ${fontSize}px "Microsoft YaHei", Arial, sans-serif`;
+  ctx.textBaseline = "middle";
 
   // Radial text spans from inner hub edge to near the outer rim.
-  const INNER_R = 32;
-  const OUTER_R = RADIUS - 8;
+  const INNER_R = 30;
+  const OUTER_R = radius - 10;
   const maxW = OUTER_R - INNER_R;
 
   const label = (isReward ? "⭐ " : "") + text;
@@ -76,74 +80,87 @@ function drawText(
   if (flip) {
     ctx.rotate(Math.PI);
     ctx.textAlign = "right";
-    ctx.fillText(displayText, -(INNER_R + 2), 4);
+    ctx.fillText(displayText, -(INNER_R + 2), 0);
   } else {
     ctx.textAlign = "left";
-    ctx.fillText(displayText, INNER_R + 2, 4);
+    ctx.fillText(displayText, INNER_R + 2, 0);
   }
+  ctx.textBaseline = "alphabetic";
   ctx.restore();
 }
 
-function drawWheelOnCanvas(ctx: CanvasRenderingContext2D, segments: WheelDisplayItem[]) {
-  ctx.clearRect(0, 0, DISPLAY, DISPLAY);
+/**
+ * Full redraw at a given wheel angle (radians, clockwise). Re-clears and
+ * re-renders every frame — the spin is driven by canvas rotate(), not CSS
+ * transform, so labels never inherit the container's skew.
+ */
+function drawWheel(
+  ctx: CanvasRenderingContext2D,
+  segments: WheelDisplayItem[],
+  wheelAngle: number,
+  display: number,
+) {
+  const center = display / 2;
+  const radius = center - 6;
+
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, display, display);
 
   if (segments.length === 0) {
     ctx.beginPath();
-    ctx.arc(CENTER, CENTER, RADIUS, 0, Math.PI * 2);
+    ctx.arc(center, center, radius, 0, TWO_PI);
     ctx.fillStyle = "#2a2a48";
     ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = "rgba(255,255,255,0.25)";
     ctx.font = '14px "Microsoft YaHei", sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("请添加任务", CENTER, CENTER);
+    ctx.fillText("请添加任务", center, center);
     ctx.textBaseline = "alphabetic";
     return;
   }
 
   const totalWeight = segments.reduce((s, seg) => s + seg.weight, 0);
-  let angle = -Math.PI / 2;
 
+  ctx.save();
+  ctx.translate(center, center);
+  ctx.rotate(wheelAngle);
+
+  // Segments laid out clockwise starting at 12 o'clock (-90°), matching the
+  // winner-rotation math in useSpinnerApp.
+  let angle = -Math.PI / 2;
   segments.forEach((seg, i) => {
-    const arc = (seg.weight / totalWeight) * Math.PI * 2;
+    const arc = (seg.weight / totalWeight) * TWO_PI;
     const end = angle + arc;
     const mid = angle + arc / 2;
+    const pal = seg.type === "reward" ? PALETTE.reward : PALETTE.task;
 
     ctx.beginPath();
-    ctx.moveTo(CENTER, CENTER);
-    ctx.arc(CENTER, CENTER, RADIUS, angle, end);
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, radius, angle, end);
     ctx.closePath();
-    ctx.fillStyle = i % 2 === 0 ? seg.color : darken(seg.color, 18);
+    ctx.fillStyle = i % 2 === 0 ? pal.fill : pal.fillAlt;
     ctx.fill();
-    ctx.strokeStyle = "rgba(10, 10, 30, 0.55)";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(255,255,255,0.65)";
+    ctx.lineWidth = 1;
     ctx.stroke();
 
-    drawText(ctx, seg.title, mid, seg.type === "reward", arc);
+    drawSegmentText(ctx, seg.title, mid, seg.type === "reward", arc, radius);
     angle = end;
   });
 
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, RADIUS, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(255,255,255,0.13)";
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  ctx.restore();
 
+  // Outer rim (drawn unrotated — a circle is rotation-invariant, but keeping
+  // it crisp and separate from the spinning body).
   ctx.beginPath();
-  ctx.arc(CENTER, CENTER, 20, 0, Math.PI * 2);
-  ctx.fillStyle = "#12122a";
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,0.25)";
-  ctx.lineWidth = 2.5;
+  ctx.arc(center, center, radius, 0, TWO_PI);
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 2;
   ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, 5, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.fill();
 }
 
 interface SpinnerWheelProps {
@@ -155,6 +172,8 @@ interface SpinnerWheelProps {
   skipCardsLine: string;
   /** When set, spin is blocked and this message is shown below the button. */
   blockReason?: string;
+  /** Wheel diameter in px. */
+  size?: number;
   onSpin(): void;
   onSpinComplete(normalizedRotation: number): void;
 }
@@ -166,45 +185,86 @@ export function SpinnerWheel({
   statsLine,
   skipCardsLine,
   blockReason,
+  size = 320,
   onSpin,
   onSpinComplete,
 }: SpinnerWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const prevTargetRef = useRef(0);
+  const pointerRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
+  // Last targetRotation we animated, to detect a fresh spin request.
+  const handledTargetRef = useRef(0);
+  // Current resting wheel angle in degrees (winner stays under the needle).
+  const restDegRef = useRef(0);
 
-  // Draw wheel whenever segments change
+  const CENTER = size / 2;
+  const RADIUS = CENTER - 6;
+
+  const draw = useCallback(
+    (wheelDeg: number) => {
+      const ctx = canvasRef.current?.getContext("2d");
+      if (ctx) drawWheel(ctx, segments, deg2rad(wheelDeg), size);
+    },
+    [segments, size],
+  );
+
+  // Static redraw whenever the segment set (or size) changes — hold the
+  // current rest angle so a freshly loaded wheel keeps the last winner on top.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    drawWheelOnCanvas(ctx, segments);
-  }, [segments]);
+    draw(restDegRef.current);
+  }, [draw]);
 
-  // Animate spin when targetRotation changes
+  // Animate a spin whenever targetRotation advances.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || targetRotation === prevTargetRef.current) return;
-    prevTargetRef.current = targetRotation;
+    if (targetRotation === handledTargetRef.current) return;
+    handledTargetRef.current = targetRotation;
 
-    canvas.style.transform = `rotate(${targetRotation}deg)`;
+    const from = restDegRef.current;
+    const travel = targetRotation - from; // clockwise degrees this spin
+    // Pointer counter-rotates by whole turns so it lands pointing straight up
+    // while moving at (very nearly) the wheel's angular speed, opposite way.
+    const pointerTurns = Math.round(travel / 360) * 360;
+    const duration = 3000 + Math.random() * 1000;
+    const start = performance.now();
 
-    const timer = setTimeout(() => {
-      if (!canvas) return;
-      const norm = targetRotation % 360;
-      canvas.style.transition = "none";
-      canvas.style.transform = `rotate(${norm}deg)`;
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          canvas.style.transition = "transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)";
-        }),
-      );
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      const norm = ((targetRotation % 360) + 360) % 360;
+      restDegRef.current = norm;
+      draw(norm);
+      if (pointerRef.current) {
+        pointerRef.current.style.transform = "translateX(-50%) rotate(0deg)";
+      }
       onSpinComplete(norm);
-    }, 4150);
+    };
 
-    return () => clearTimeout(timer);
-  }, [targetRotation, onSpinComplete]);
+    const tick = (now: number) => {
+      if (done) return;
+      const t = Math.min((now - start) / duration, 1);
+      const e = EASE_OUT_QUART(t);
+      draw(from + travel * e);
+      if (pointerRef.current) {
+        pointerRef.current.style.transform = `translateX(-50%) rotate(${-pointerTurns * e}deg)`;
+      }
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+      else finish();
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    // Safety net: requestAnimationFrame is paused while the window is hidden, so
+    // guarantee the spin resolves (result modal appears, wheel settles) even if
+    // the user tabs away mid-spin. The `done` guard keeps this idempotent with
+    // the rAF path when the window is visible.
+    const fallback = setTimeout(finish, duration + 250);
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      clearTimeout(fallback);
+    };
+  }, [targetRotation, draw, onSpinComplete]);
+
+  const dimmed = Boolean(blockReason);
 
   return (
     <div className="wheel-section">
@@ -213,19 +273,34 @@ export function SpinnerWheel({
         <p className="app-subtitle">转起来，看看今天该做什么！</p>
       </div>
 
-      <div className="wheel-wrapper">
-        <div className="pointer">▼</div>
+      <div
+        className="wheel-wrapper"
+        style={{ width: size, height: size, opacity: dimmed ? 0.4 : 1 }}
+      >
         <canvas
           ref={canvasRef}
           id="wheel-canvas"
-          width={DISPLAY * DPR}
-          height={DISPLAY * DPR}
-          style={{
-            width: DISPLAY,
-            height: DISPLAY,
-            transition: "transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)",
-          }}
+          width={size * DPR}
+          height={size * DPR}
+          style={{ width: size, height: size }}
         />
+
+        {/* Counter-rotating needle: pivots at the centre, points up at rest. */}
+        <div
+          ref={pointerRef}
+          className="wheel-needle"
+          style={{ width: size, height: size }}
+        >
+          <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            <polygon
+              points={`${CENTER},${CENTER - RADIUS + 6} ${CENTER - 7},${CENTER - 4} ${CENTER + 7},${CENTER - 4}`}
+              fill="#EF4444"
+            />
+          </svg>
+        </div>
+
+        {/* Centre cap covers the segment convergence + needle pivot. */}
+        <div className="wheel-cap" />
       </div>
 
       <div className="wheel-controls">
